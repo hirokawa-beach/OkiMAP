@@ -1,8 +1,9 @@
 const dziRoot = "img/dzi";
 const availableDates = [
-  "202511032100",
-  "202511042100",
-  "202511052100",
+  "202508200005",
+  "202508210000",
+  "202508220000",
+  "202508230000"
 ];
 
 const viewer = OpenSeadragon({

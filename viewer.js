@@ -16,7 +16,9 @@ const viewer = OpenSeadragon({
   preserveViewport: true,
   visibilityRatio: 1.0,
   blendTime: 0.1,
-  maxZoomPixelRatio: 4
+  maxZoomPixelRatio: 4,
+  background: '#9bbdff',
+  imageSmoothingEnabled: false,
 });
 
 const label = document.getElementById("label");

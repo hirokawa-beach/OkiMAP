@@ -1,0 +1,59 @@
+body {
+  margin: 0;
+  font-family: "Segoe UI", "Noto Sans JP", sans-serif;
+  background: #111;
+  color: #eee;
+  overflow: hidden;
+}
+
+#viewer {
+  width: 100vw;
+  height: 100vh;
+}
+
+#controls {
+  position: absolute;
+  bottom: 20px;
+  left: 50%;
+  transform: translateX(-50%);
+  width: 80%;
+  max-width: 800px;
+  background: rgba(20, 20, 20, 0.7);
+  border-radius: 12px;
+  padding: 10px 20px;
+  box-shadow: 0 4px 20px rgba(0, 0, 0, 0.5);
+  -webkit-backdrop-filter: blur(6px);
+          backdrop-filter: blur(6px);
+  z-index: 999;
+}
+#controls #label {
+  text-align: center;
+  font-size: 18px;
+  font-weight: 500;
+  margin-bottom: 5px;
+  color: white;
+}
+#controls #slider {
+  margin: 10px 0;
+}
+#controls #slider .noUi-base {
+  background: black;
+}
+#controls #slider .noUi-connect {
+  background: #48f;
+}
+#controls #slider .noUi-handle {
+  background: #48f;
+  border: 2px solid rgb(119, 168.4545454545, 255);
+  box-shadow: 0 0 6px rgba(0, 128, 255, 0.6);
+}
+
+@media (max-width: 600px) {
+  #controls {
+    width: 90%;
+    padding: 8px 14px;
+  }
+  #controls #label {
+    font-size: 16px;
+  }
+}/*# sourceMappingURL=style.css.map */

@@ -1,0 +1,70 @@
+
+$bg-color: #111;
+$text-color: #eee;
+$accent-color: #48f;
+$control-bg: rgba(20, 20, 20, 0.7);
+
+body {
+  margin: 0;
+  font-family: 'Segoe UI', 'Noto Sans JP', sans-serif;
+  background: $bg-color;
+  color: $text-color;
+  overflow: hidden;
+}
+
+#viewer {
+  width: 100vw;
+  height: 100vh;
+}
+
+#controls {
+  position: absolute;
+  bottom: 20px;
+  left: 50%;
+  transform: translateX(-50%);
+  width: 80%;
+  max-width: 800px;
+  background: $control-bg;
+  border-radius: 12px;
+  padding: 10px 20px;
+  box-shadow: 0 4px 20px rgba(0,0,0,0.5);
+  backdrop-filter: blur(6px);
+  z-index: 999;
+
+  #label {
+    text-align: center;
+    font-size: 18px;
+    font-weight: 500;
+    margin-bottom: 5px;
+    color: lighten($text-color, 10%);
+  }
+
+  #slider {
+    margin: 10px 0;
+
+    .noUi-base {
+      background: darken($bg-color, 10%);
+    }
+
+    .noUi-connect {
+      background: $accent-color;
+    }
+
+    .noUi-handle {
+      background: $accent-color;
+      border: 2px solid lighten($accent-color, 10%);
+      box-shadow: 0 0 6px rgba(0, 128, 255, 0.6);
+    }
+  }
+}
+
+// ==== モバイル対応 ====
+@media (max-width: 600px) {
+  #controls {
+    width: 90%;
+    padding: 8px 14px;
+    #label {
+      font-size: 16px;
+    }
+  }
+}

@@ -2,20 +2,41 @@
 <html lang="ja">
 <head>
   <meta charset="UTF-8" />
-  <title>OkiMAP</title>
-
-  <!-- SCSSコンパイル後のCSSを読み込む -->
-  <link rel="stylesheet" href="style.css">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>OkiMAP v1.1.0</title>
+  <link rel="stylesheet" href="style.css" />
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/openseadragon/4.1.0/openseadragon.min.js"></script>
 </head>
 <body>
-  <div id="viewer">
-    <div id="label">Loading...</div>
+  <div id="viewer"></div>
+
+  <!-- ✅ ガラス製の時間コントロールバー -->
+  <div id="time-bar" class="glass draggable">
+    <div class="ticks">
+      <!-- デザイン用の目盛り -->
+      <div class="tick major"></div>
+      <div class="tick"></div><div class="tick"></div>
+      <div class="tick"></div><div class="tick"></div>
+      <div class="tick major"></div>
+      <div class="tick"></div><div class="tick"></div>
+      <div class="tick"></div><div class="tick"></div>
+      <div class="tick major"></div>
+    </div>
+
+    <div class="date-controls">
+      <button id="prev" class="arrow">◀</button>
+      <div class="date-display">
+        <div id="date-main">2025.09.27</div>
+        <div id="date-sub">am 00:00 (JST)</div>
+      </div>
+      <button id="next" class="arrow">▶</button>
+    </div>
+
+    <div class="play-controls">
+      <button id="play-btn" class="play">▶</button>
+    </div>
   </div>
-  <div id="slider"></div>
-  <script src="https://cdnjs.cloudflare.com/ajax/libs/openseadragon/4.1.0/openseadragon.min.js"></script>
-  <!-- noUiSlider（スライダーのCSSとJS） -->
-  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/nouislider@15.7.0/dist/nouislider.min.css">
-  <script src="https://cdn.jsdelivr.net/npm/nouislider@15.7.0/dist/nouislider.min.js"></script>
+
   <script src="viewer.js"></script>
 </body>
 </html>

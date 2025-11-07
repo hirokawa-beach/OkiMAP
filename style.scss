@@ -3,13 +3,11 @@ $bg-color: #111;
 $text-color: #eee;
 $accent-color: #48f;
 $control-bg: rgba(20, 20, 20, 0.7);
-
 body {
   margin: 0;
-  font-family: 'Segoe UI', 'Noto Sans JP', sans-serif;
-  background: $bg-color;
-  color: $text-color;
   overflow: hidden;
+  font-family: "Inter", "Noto Sans JP", sans-serif;
+  background: #9bbdff;
 }
 
 #viewer {
@@ -17,47 +15,101 @@ body {
   height: 100vh;
 }
 
-#controls {
+#time-bar {
   position: absolute;
-  bottom: 20px;
+  bottom: 5%;
   left: 50%;
   transform: translateX(-50%);
-  width: 80%;
-  max-width: 800px;
-  background: $control-bg;
-  border-radius: 12px;
-  padding: 10px 20px;
-  box-shadow: 0 4px 20px rgba(0,0,0,0.5);
-  backdrop-filter: blur(6px);
-  z-index: 999;
+  width: 500px;
+  height: 100px;
+  padding: 12px 20px;
+  border-radius: 16px;
+  backdrop-filter: blur(19px) saturate(180%);
+  background: rgba(255, 255, 255, 0.25);
+  box-shadow: 0 4px 30px rgba(0, 0, 0, 0.2);
+  border: 1px solid rgba(255, 255, 255, 0.4);
+  user-select: none;
+  cursor: grab;
+  text-align: center;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+}
 
-  #label {
-    text-align: center;
-    font-size: 18px;
-    font-weight: 500;
-    margin-bottom: 5px;
-    color: lighten($text-color, 10%);
-  }
+#time-bar:active {
+  cursor: grabbing;
+}
 
-  #slider {
-    margin: 10px 0;
+.ticks {
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  height: 16px;
+  margin-bottom: 6px;
 
-    .noUi-base {
-      background: darken($bg-color, 10%);
-    }
+  .tick {
+    width: 2px;
+    height: 8px;
+    background: rgba(255, 255, 255, 0.8);
+    margin: 0 6px;
 
-    .noUi-connect {
-      background: $accent-color;
-    }
-
-    .noUi-handle {
-      background: $accent-color;
-      border: 2px solid lighten($accent-color, 10%);
-      box-shadow: 0 0 6px rgba(0, 128, 255, 0.6);
+    &.major {
+      height: 14px;
+      background: white;
     }
   }
 }
 
+.date-controls {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  width: 100%;
+
+  .arrow {
+    background: none;
+    border: none;
+    color: white;
+    font-size: 24px;
+    cursor: pointer;
+    transition: transform 0.2s ease;
+    &:hover {
+      transform: scale(1.2);
+    }
+  }
+
+  .date-display {
+    color: white;
+    text-align: center;
+
+    #date-main {
+      font-weight: 700;
+      font-size: 18px;
+    }
+
+    #date-sub {
+      font-size: 12px;
+      opacity: 0.9;
+    }
+  }
+}
+
+.play-controls {
+  margin-top: 4px;
+
+  .play {
+    background: none;
+    border: none;
+    color: white;
+    font-size: 20px;
+    cursor: pointer;
+    transition: transform 0.2s ease;
+
+    &:hover {
+      transform: scale(1.2);
+    }
+  }
+}
 // ==== モバイル対応 ====
 @media (max-width: 600px) {
   #controls {

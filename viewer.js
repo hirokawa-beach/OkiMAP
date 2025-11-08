@@ -31,11 +31,11 @@ let currentIndex = 0;
 let isPlaying = false;
 let playInterval = null;
 
-// === OpenSeadragon 初期化 ===
+// === OpenSeadragon ===
 const viewer = OpenSeadragon({
   id: "viewer",
   prefixUrl: "https://cdnjs.cloudflare.com/ajax/libs/openseadragon/4.1.0/images/",
-  showNavigationControl: true,
+  showNavigationControl: false,
   showZoomControl: true,
   minZoomLevel: 0.8,
   defaultZoomLevel: 1,
@@ -47,7 +47,38 @@ const viewer = OpenSeadragon({
   imageSmoothingEnabled: false,
 });
 
-// === DZI 読み込み ===
+// 左クリック拡大
+viewer.addHandler("canvas-click", function(event) {
+  if (!event.quick) return; // シングルクリックのみ
+  viewer.viewport.zoomBy(1.2);
+  viewer.viewport.applyConstraints();
+});
+
+// 右クリック縮小
+viewer.addHandler("canvas-contextmenu", function(event) {
+  event.preventDefaultAction = true; // デフォを無効化
+  if (event.originalEvent) {
+    event.originalEvent.preventDefault(); // ブラウザメニューを無効化
+  }
+  viewer.viewport.zoomBy(1 / 2);
+  viewer.viewport.applyConstraints();
+});
+
+// 各日付で上側に追加されたピクセル数
+const topOffsets = {
+  "20250826": 0,
+  "20250827": 0,
+  "20250828": 0,
+  "20250829": 0,  
+};
+
+// 各日付で左側に追加されたピクセル数
+const leftOffsets = {
+  "20250826": 0,
+  "20250827": 0,
+  "20250828": 0,  // もし左に追加されているなら
+  "20250829": 0,
+};
 function loadDZI(index) {
   const date = availableDates[index];
   const dziUrl = `${dziRoot}/${date}/tiled.dzi`;
@@ -56,21 +87,74 @@ function loadDZI(index) {
   document.getElementById("date-main").textContent = dateObj.main;
   document.getElementById("date-sub").textContent = dateObj.sub;
 
-  viewer.open(dziUrl);
+  let savedData = null;
+  if (viewer.world.getItemCount() > 0) {
+    const tiledImage = viewer.world.getItemAt(0);
+    const bounds = viewer.viewport.getBounds();
+    const imageSize = tiledImage.getContentSize();
+    const zoom = viewer.viewport.getZoom();
+    
+    savedData = {
+      centerX: (bounds.x + bounds.width / 2) * imageSize.x,
+      centerY: (bounds.y + bounds.height / 2) * imageSize.y,
+      zoom: zoom,
+      oldSize: imageSize
+    };
+    
+    console.log("=== Date change:", availableDates[currentIndex], "→", date, "===");
+    console.log("Old size:", imageSize.x, "×", imageSize.y);
+    console.log("Old center (pixel):", savedData.centerX, savedData.centerY);
+  }
+
+  viewer.open({
+    tileSource: dziUrl,
+    success: function(event) {
+      if (savedData) {
+        const tiledImage = viewer.world.getItemAt(0);
+        const newImageSize = tiledImage.getContentSize();
+        
+        console.log("New size:", newImageSize.x, "×", newImageSize.y);
+        console.log("Size diff:", 
+          "width:", newImageSize.x - savedData.oldSize.x,
+          "height:", newImageSize.y - savedData.oldSize.y
+        );
+        
+        const newCenterX = savedData.centerX / newImageSize.x;
+        const newCenterY = savedData.centerY / newImageSize.y;
+        
+        viewer.viewport.zoomTo(savedData.zoom, null, true);
+        viewer.viewport.panTo(new OpenSeadragon.Point(newCenterX, newCenterY), true);
+      }
+    }
+  });
+  
   currentIndex = index;
 }
-
+// === 表示している画像の時刻表示 ===
 function parseDate(dateStr) {
   const y = dateStr.slice(0, 4);
   const m = dateStr.slice(4, 6);
   const d = dateStr.slice(6, 8);
-  const h = dateStr.slice(8, 10);
+  const h = parseInt(dateStr.slice(8, 10), 10);
   const min = dateStr.slice(10, 12);
-  const ampm = h < 12 ? "am" : "pm";
-  const hh = ("0" + (h % 12 || 12)).slice(-2);
+  
+  let ampm, hh;
+  if (h === 0) {
+    ampm = "am";
+    hh = "00";
+  } else if (h < 12) {
+    ampm = "am";
+    hh = ("0" + h).slice(-2);
+  } else if (h === 12) {
+    ampm = "pm";
+    hh = "12";
+  } else {
+    ampm = "pm";
+    hh = ("0" + (h - 12)).slice(-2);
+  }
   return {
     main: `${y}.${m}.${d}`,
-    sub: `${ampm} ${hh}:${min} (JST)`,
+    sub: `${hh}:${min} ${ampm} (JST)`,
   };
 }
 
@@ -87,7 +171,8 @@ document.getElementById("play-btn").addEventListener("click", () => {
   isPlaying = !isPlaying;
   const btn = document.getElementById("play-btn");
   if (isPlaying) {
-    btn.textContent = "❚❚";
+    btn.textContent = "⏸";
+    btn.style.fontSize = "1.5em";
     playInterval = setInterval(() => {
       if (currentIndex < availableDates.length - 1) {
         loadDZI(currentIndex + 1);
@@ -95,11 +180,13 @@ document.getElementById("play-btn").addEventListener("click", () => {
         clearInterval(playInterval);
         isPlaying = false;
         btn.textContent = "▶";
+        btn.style.fontSize = ""; 
       }
     }, 5000);
   } else {
     clearInterval(playInterval);
     btn.textContent = "▶";
+    btn.style.fontSize = ""; 
   }
 });
 
@@ -129,6 +216,57 @@ window.addEventListener("mouseup", () => {
   isDragging = false;
   timeBar.style.cursor = "grab";
 });
+// === 日付選択UI === ← ここに追加
+const dateDisplay = document.getElementById("date-display");
+const dateSelector = document.getElementById("date-selector");
+const dateOverlay = document.getElementById("date-overlay");
+const dateList = document.getElementById("date-list");
+const closeSelector = document.getElementById("close-selector");
+
+dateDisplay.addEventListener("click", (e) => {
+  e.stopPropagation();
+  dateList.innerHTML = "";
+  availableDates.forEach((date, index) => {
+    const dateObj = parseDate(date);
+    const btn = document.createElement("button");
+    btn.textContent = `${dateObj.main} ${dateObj.sub}`;
+    btn.style.cssText = "padding: 10px; width: 100%; text-align: left; cursor: pointer; border: 1px solid #ccc; background: white; border-radius: 5px;";
+    
+    if (index === currentIndex) {
+      btn.style.background = "#e3f2fd";
+      btn.style.fontWeight = "bold";
+    }
+    
+    btn.addEventListener("click", () => {
+      loadDZI(index);
+      dateSelector.style.display = "none";
+      dateOverlay.style.display = "none";
+    });
+    
+    btn.addEventListener("mouseenter", () => {
+      btn.style.background = "#f0f0f0";
+    });
+    btn.addEventListener("mouseleave", () => {
+      btn.style.background = index === currentIndex ? "#e3f2fd" : "white";
+    });
+    
+    dateList.appendChild(btn);
+  });
+  
+  dateSelector.style.display = "block";
+  dateOverlay.style.display = "block";
+});
+
+closeSelector.addEventListener("click", () => {
+  dateSelector.style.display = "none";
+  dateOverlay.style.display = "none";
+});
+
+dateOverlay.addEventListener("click", () => {
+  dateSelector.style.display = "none";
+  dateOverlay.style.display = "none";
+});
+
 
 // === 初期ロード ===
 loadDZI(0);

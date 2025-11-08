@@ -10,7 +10,7 @@
 <body>
   <div id="viewer"></div>
 
-  <!-- ✅ ガラス製の時間コントロールバー -->
+  <!-- コンソール -->
   <div id="time-bar" class="glass draggable">
     <div class="ticks">
       <!-- デザイン用の目盛り -->
@@ -22,20 +22,28 @@
       <div class="tick"></div><div class="tick"></div>
       <div class="tick major"></div>
     </div>
-
+    <!-- ボタン類 -->
     <div class="date-controls">
-      <button id="prev" class="arrow">◀</button>
-      <div class="date-display">
+      <button id="prev" class="arrow">⇦</button>
+      <div class="date-display" id="date-display" style="cursor: pointer;">
         <div id="date-main">2025.09.27</div>
-        <div id="date-sub">am 00:00 (JST)</div>
+        <div id="date-sub">00:00 a.m. (JST)</div>
       </div>
-      <button id="next" class="arrow">▶</button>
+      <button id="next" class="arrow">⇨</button>
     </div>
 
     <div class="play-controls">
       <button id="play-btn" class="play">▶</button>
     </div>
   </div>
+
+  <!-- 日付選択 -->
+  <div id="date-selector" style="display: none; position: fixed; top: 50%; left: 50%; transform: translate(-50%, -50%); background: rgba(255,255,255,0.95); padding: 20px; border-radius: 10px; max-height: 80vh; overflow-y: auto; z-index: 1000; box-shadow: 0 4px 20px rgba(0,0,0,0.3);">
+    <h3 style="margin-top: 0;">日付を選択</h3>
+    <div id="date-list" style="display: grid; gap: 5px;"></div>
+    <button id="close-selector" style="margin-top: 15px; width: 100%; padding: 10px;">閉じる</button>
+  </div>
+  <div id="date-overlay" style="display: none; position: fixed; top: 0; left: 0; right: 0; bottom: 0; background: rgba(0,0,0,0.5); z-index: 999;"></div>
 
   <script src="viewer.js"></script>
 </body>

@@ -19,8 +19,8 @@ body {
   height: 100px;
   padding: 12px 20px;
   border-radius: 16px;
-  -webkit-backdrop-filter: blur(19px) saturate(180%);
-          backdrop-filter: blur(19px) saturate(180%);
+  -webkit-backdrop-filter: blur(8px) saturate(180%);
+          backdrop-filter: blur(8px) saturate(180%);
   background: rgba(255, 255, 255, 0.25);
   box-shadow: 0 4px 30px rgba(0, 0, 0, 0.2);
   border: 1px solid rgba(255, 255, 255, 0.4);
@@ -66,7 +66,7 @@ body {
   background: none;
   border: none;
   color: white;
-  font-size: 24px;
+  font-size: 40px;
   cursor: pointer;
   transition: transform 0.2s ease;
 }
@@ -79,10 +79,10 @@ body {
 }
 .date-controls .date-display #date-main {
   font-weight: 700;
-  font-size: 18px;
+  font-size: 20px;
 }
 .date-controls .date-display #date-sub {
-  font-size: 12px;
+  font-size: 13px;
   opacity: 0.9;
 }
 
@@ -93,7 +93,7 @@ body {
   background: none;
   border: none;
   color: white;
-  font-size: 20px;
+  font-size: 30px;
   cursor: pointer;
   transition: transform 0.2s ease;
 }

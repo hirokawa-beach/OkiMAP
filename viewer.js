@@ -41,7 +41,7 @@ const viewer = OpenSeadragon({
   defaultZoomLevel: 1,
   preserveViewport: true,
   visibilityRatio: 1.0,
-  blendTime: 0.1,
+  blendTime: 0,
   maxZoomPixelRatio: 4,
   background: "#9bbdff",
   imageSmoothingEnabled: false,

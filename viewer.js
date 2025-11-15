@@ -33,19 +33,65 @@ let playInterval = null;
 
 // === OpenSeadragon ===
 const viewer = OpenSeadragon({
-  id: "viewer",
-  prefixUrl: "https://cdnjs.cloudflare.com/ajax/libs/openseadragon/4.1.0/images/",
-  showNavigationControl: false,
-  showZoomControl: true,
-  minZoomLevel: 0.8,
-  defaultZoomLevel: 1,
-  preserveViewport: true,
-  visibilityRatio: 1.0,
-  blendTime: 0,
-  immediateRender: true,
-  maxZoomPixelRatio: 4,
-  background: "#9bbdff",
-  imageSmoothingEnabled: false,
+    id: "viewer",
+    prefixUrl: "https://cdnjs.cloudflare.com/ajax/libs/openseadragon/4.1.0/images/",
+    showNavigationControl: true,
+    minZoomLevel: 0.5,
+    defaultZoomLevel: 1,
+    preserveViewport: true,
+    visibilityRatio: 1.0,
+    blendTime: 0,
+    immediateRender: true,
+    maxZoomPixelRatio: 4,
+    background: "#9bbdff",
+    imageSmoothingEnabled: false,
+    tileOverlap: 0,               // タイル端余白を0に
+    smoothTileEdgesMinZoom: Infinity,    // 端ぼかしを完全無効化
+});
+
+// タイル描画時のピクセルずれ修正
+viewer.addHandler('tile-drawing', function(event) {
+    const ctx = event.renderedContext;
+    if (!ctx) return;
+    
+    // 描画座標とサイズを整数に丸める
+    const x = Math.round(event.x);
+    const y = Math.round(event.y);
+    const w = Math.round(event.rendered.canvas.width);
+    const h = Math.round(event.rendered.canvas.height);
+    
+    // transformをリセットして正確に配置
+    ctx.setTransform(1, 0, 0, 1, 0, 0);
+    ctx.imageSmoothingEnabled = false;
+    
+    // 整数座標で描画
+    ctx.drawImage(event.rendered.canvas, x, y, w, h);
+    
+    // 元の描画をキャンセル
+    event.rendered = null;
+});
+
+// ビューポート更新時にもピクセルアライメントを強制
+viewer.addHandler('animation', function(event) {
+    const viewport = viewer.viewport;
+    const bounds = viewport.getBounds(true);
+    
+    // ビューポートの座標を微調整してピクセルグリッドに合わせる
+    const containerSize = viewport.getContainerSize();
+    const zoom = viewport.getZoom(true);
+    
+    // ピクセル単位での位置計算
+    const pixelX = bounds.x * containerSize.x * zoom;
+    const pixelY = bounds.y * containerSize.y * zoom;
+    
+    // 整数位置に調整（必要に応じて）
+    const adjustedX = Math.round(pixelX) / (containerSize.x * zoom);
+    const adjustedY = Math.round(pixelY) / (containerSize.y * zoom);
+    
+    if (Math.abs(adjustedX - bounds.x) > 0.0001 || Math.abs(adjustedY - bounds.y) > 0.0001) {
+        bounds.x = adjustedX;
+        bounds.y = adjustedY;
+    }
 });
 
 // 左クリック拡大
@@ -53,6 +99,7 @@ viewer.addHandler("canvas-click", function(event) {
   if (!event.quick) return; // シングルクリックのみ
   viewer.viewport.zoomBy(1.2);
   viewer.viewport.applyConstraints();
+  logZoom();
 });
 
 // 右クリック縮小
@@ -63,6 +110,11 @@ viewer.addHandler("canvas-contextmenu", function(event) {
   }
   viewer.viewport.zoomBy(1 / 2);
   viewer.viewport.applyConstraints();
+  logZoom();
+});
+
+viewer.addHandler("canvas-scroll", function(event){
+    logZoom();
 });
 
 // 各日付で上側に追加されたピクセル数
@@ -80,6 +132,13 @@ const leftOffsets = {
   "20250828": 0,  // もし左に追加されているなら
   "20250829": 0,
 };
+
+let preloadedTiles = {}; // キャッシュ用
+
+function logZoom() {
+    console.log("Zoom:", (viewer.viewport.getZoom()*100).toFixed(1) + "%");
+}
+
 function loadDZI(index) {
   const date = availableDates[index];
   const dziUrl = `${dziRoot}/${date}/tiled.dzi`;
@@ -103,34 +162,63 @@ function loadDZI(index) {
     };
     
     console.log("=== Date change:", availableDates[currentIndex], "→", date, "===");
-    console.log("Old size:", imageSize.x, "×", imageSize.y);
-    console.log("Old center (pixel):", savedData.centerX, savedData.centerY);
   }
 
-  viewer.open({
-    tileSource: dziUrl,
-    success: function(event) {
-      if (savedData) {
-        const tiledImage = viewer.world.getItemAt(0);
-        const newImageSize = tiledImage.getContentSize();
-        
-        console.log("New size:", newImageSize.x, "×", newImageSize.y);
-        console.log("Size diff:", 
-          "width:", newImageSize.x - savedData.oldSize.x,
-          "height:", newImageSize.y - savedData.oldSize.y
-        );
-        
-        const newCenterX = savedData.centerX / newImageSize.x;
-        const newCenterY = savedData.centerY / newImageSize.y;
-        
-        viewer.viewport.zoomTo(savedData.zoom, null, true);
-        viewer.viewport.panTo(new OpenSeadragon.Point(newCenterX, newCenterY), true);
-      }
-    }
-  });
-  
+  // キャッシュ済みなら即表示
+  if (preloadedTiles[dziUrl]) {
+    console.log("Using preloaded:", dziUrl);
+    viewer.open({
+      tileSource: preloadedTiles[dziUrl].source,
+      success: (event) => restoreViewport(savedData, event),
+    });
+  } else {
+    // 通常読み込み
+    viewer.open({
+      tileSource: dziUrl,
+      success: (event) => {
+        restoreViewport(savedData, event);
+        // 読み込み完了したらキャッシュ登録
+        preloadedTiles[dziUrl] = event.item;
+        logZoom();
+      },
+    });
+  }
+
   currentIndex = index;
+
+  // プリロード（前後の日付）
+  preloadNeighbor(index - 1);
+  preloadNeighbor(index + 1);
 }
+
+function restoreViewport(savedData, event) {
+  if (!savedData) return;
+  const tiledImage = event.item;
+  const newImageSize = tiledImage.getContentSize();
+  const newCenterX = savedData.centerX / newImageSize.x;
+  const newCenterY = savedData.centerY / newImageSize.y;
+  viewer.viewport.zoomTo(savedData.zoom, null, true);
+  viewer.viewport.panTo(new OpenSeadragon.Point(newCenterX, newCenterY), true);
+}
+
+function preloadNeighbor(index) {
+  if (index < 0 || index >= availableDates.length) return;
+
+  const date = availableDates[index];
+  const dziUrl = `${dziRoot}/${date}/tiled.dzi`;
+  if (preloadedTiles[dziUrl]) return; // すでに読み込み済みならスキップ
+
+  console.log("Preloading:", dziUrl);
+  viewer.addTiledImage({
+    tileSource: dziUrl,
+    opacity: 0, // 非表示
+    success: (event) => {
+      preloadedTiles[dziUrl] = event.item;
+      console.log("✅ Preloaded:", dziUrl);
+    },
+  });
+}
+
 // === 表示している画像の時刻表示 ===
 function parseDate(dateStr) {
   const y = dateStr.slice(0, 4);
@@ -217,7 +305,8 @@ window.addEventListener("mouseup", () => {
   isDragging = false;
   timeBar.style.cursor = "grab";
 });
-// === 日付選択UI === ← ここに追加
+
+// === 日付選択UI ===
 const dateDisplay = document.getElementById("date-display");
 const dateSelector = document.getElementById("date-selector");
 const dateOverlay = document.getElementById("date-overlay");
@@ -268,6 +357,6 @@ dateOverlay.addEventListener("click", () => {
   dateOverlay.style.display = "none";
 });
 
-
 // === 初期ロード ===
 loadDZI(0);
+logZoom();

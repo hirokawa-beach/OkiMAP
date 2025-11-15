@@ -1,0 +1,206 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Large Image Viewer</title>
+<style>
+body {
+  margin: 0;
+  overflow: hidden;
+  background: #9bbdff;
+  user-select: none;
+}
+#viewer {
+  display: block;
+  width: 100vw;
+  height: 100vh;
+  image-rendering: pixelated;
+}
+#date-display {
+  position: fixed;
+  top: 20px;
+  left: 50%;
+  transform: translateX(-50%);
+  color: #fff;
+  font-size: 1.5em;
+  text-shadow: 0 0 5px rgba(0,0,0,0.5);
+}
+#controls {
+  position: fixed;
+  bottom: 20px;
+  left: 50%;
+  transform: translateX(-50%);
+  display: flex;
+  gap: 1rem;
+  background: rgba(255,255,255,0.2);
+  backdrop-filter: blur(10px);
+  padding: 0.6rem 1.2rem;
+  border-radius: 1rem;
+}
+button {
+  background: rgba(255,255,255,0.4);
+  border: none;
+  border-radius: 0.6rem;
+  padding: 0.5rem 1rem;
+  color: #333;
+  cursor: pointer;
+  font-weight: 600;
+  transition: all 0.2s ease;
+}
+button:hover {
+  background: rgba(255,255,255,0.8);
+}
+</style>
+</head>
+<body>
+
+<canvas id="viewer"></canvas>
+<div id="date-display"></div>
+<div id="controls">
+  <button id="prev">◀︎</button>
+  <button id="play">▶︎</button>
+  <button id="next">▶︎</button>
+</div>
+
+<script>
+const canvas = document.getElementById("viewer");
+const ctx = canvas.getContext("2d");
+ctx.imageSmoothingEnabled = false;
+
+canvas.width = window.innerWidth;
+canvas.height = window.innerHeight;
+
+const availableDates = [
+  "202508200005",
+  "202508210000",
+];
+let currentIndex = 0;
+let playing = false;
+let playTimer = null;
+
+let scale = 1;          // ズーム倍率
+let offsetX = 0;        // 画像左上のキャンバス座標
+let offsetY = 0;
+let drag = false;
+let startX, startY;
+
+let currentImg = new Image();
+let preloadNext = new Image();
+let preloadPrev = new Image();
+
+function draw() {
+  ctx.clearRect(0, 0, canvas.width, canvas.height);
+
+  // canvas上の表示サイズに合わせて元画像から切り出す範囲
+  const viewWidth = canvas.width / scale;
+  const viewHeight = canvas.height / scale;
+
+  ctx.drawImage(
+    currentImg,
+    -offsetX / scale, -offsetY / scale, // 元画像上の切り出し開始座標
+    viewWidth, viewHeight,              // 元画像上の切り出す幅・高さ
+    0, 0, canvas.width, canvas.height  // canvas に描画する範囲
+  );
+}
+
+function loadImage(index) {
+  const date = availableDates[index];
+  const src = `img/dzi/${date}/tiled.png`; // 1枚画像に置き換え
+  document.getElementById("date-display").textContent = date;
+  const img = new Image();
+  img.src = src;
+  img.onload = () => {
+    currentImg = img;
+    offsetX = 0;
+    offsetY = 0;
+    scale = 1;
+    draw();
+    preloadNeighbors(index);
+  };
+}
+
+function preloadNeighbors(index) {
+  if (index > 0) preloadPrev.src = `img/dzi/${availableDates[index - 1]}/tiled.png`;
+  if (index < availableDates.length - 1) preloadNext.src = `img/dzi/${availableDates[index + 1]}/tiled.png`;
+}
+
+// === ズーム ===
+canvas.addEventListener("wheel", e => {
+  e.preventDefault();
+  const zoomFactor = e.deltaY < 0 ? 1.1 : 0.9;
+  const mouseX = e.offsetX;
+  const mouseY = e.offsetY;
+
+  // 画像上の座標を保持
+  const imgX = (mouseX - offsetX) / scale;
+  const imgY = (mouseY - offsetY) / scale;
+
+  scale *= zoomFactor;
+
+  // ズーム中心を固定
+  offsetX = mouseX - imgX * scale;
+  offsetY = mouseY - imgY * scale;
+
+  draw();
+});
+
+// === ドラッグ ===
+canvas.addEventListener("mousedown", e => {
+  drag = true;
+  startX = e.offsetX - offsetX;
+  startY = e.offsetY - offsetY;
+});
+canvas.addEventListener("mouseup", () => drag = false);
+canvas.addEventListener("mouseleave", () => drag = false);
+canvas.addEventListener("mousemove", e => {
+  if(drag){
+    offsetX = e.offsetX - startX;
+    offsetY = e.offsetY - startY;
+    draw();
+  }
+});
+
+// === 日付変更 ===
+function changeDate(delta) {
+  const nextIndex = currentIndex + delta;
+  if(nextIndex < 0 || nextIndex >= availableDates.length) return;
+  currentIndex = nextIndex;
+  loadImage(currentIndex);
+}
+
+// === 自動再生 ===
+function togglePlay() {
+  const playBtn = document.getElementById("play");
+  if(playing){
+    clearInterval(playTimer);
+    playBtn.textContent = "▶︎";
+    playing = false;
+  } else {
+    playBtn.textContent = "⏸";
+    playing = true;
+    playTimer = setInterval(()=>{
+      if(currentIndex >= availableDates.length -1){
+        togglePlay();
+      } else {
+        changeDate(1);
+      }
+    },5000);
+  }
+}
+
+document.getElementById("prev").addEventListener("click", ()=>changeDate(-1));
+document.getElementById("next").addEventListener("click", ()=>changeDate(1));
+document.getElementById("play").addEventListener("click", togglePlay);
+
+window.addEventListener("resize", ()=>{
+  canvas.width = window.innerWidth;
+  canvas.height = window.innerHeight;
+  draw();
+});
+
+loadImage(currentIndex);
+</script>
+
+</body>
+</html>

@@ -160,24 +160,18 @@ function loadDZI(index) {
       zoom: zoom,
       oldSize: imageSize
     };
-    
-    console.log("=== Date change:", availableDates[currentIndex], "→", date, "===");
   }
 
-  // キャッシュ済みなら即表示
   if (preloadedTiles[dziUrl]) {
-    console.log("Using preloaded:", dziUrl);
     viewer.open({
       tileSource: preloadedTiles[dziUrl].source,
       success: (event) => restoreViewport(savedData, event),
     });
   } else {
-    // 通常読み込み
     viewer.open({
       tileSource: dziUrl,
       success: (event) => {
         restoreViewport(savedData, event);
-        // 読み込み完了したらキャッシュ登録
         preloadedTiles[dziUrl] = event.item;
         logZoom();
       },
@@ -186,10 +180,19 @@ function loadDZI(index) {
 
   currentIndex = index;
 
+  // ---- 🔥 スライダー同期はここに1回だけ書く ----
+  if (range) {
+    range.value = index;
+    const ratio = (index / range.max) * 100;
+    range.style.background =
+      `linear-gradient(90deg, ${activeColor} ${ratio}%, ${inactiveColor} ${ratio}%)`;
+  }
+
   // プリロード（前後の日付）
   preloadNeighbor(index - 1);
   preloadNeighbor(index + 1);
 }
+
 
 function restoreViewport(savedData, event) {
   if (!savedData) return;
@@ -260,7 +263,7 @@ document.getElementById("play-btn").addEventListener("click", () => {
   isPlaying = !isPlaying;
   const btn = document.getElementById("play-btn");
   if (isPlaying) {
-    btn.textContent = "⏸";
+    btn.textContent = "⏹️";
     btn.style.fontSize = "1.5em";
     playInterval = setInterval(() => {
       if (currentIndex < availableDates.length - 1) {
@@ -268,13 +271,13 @@ document.getElementById("play-btn").addEventListener("click", () => {
       } else {
         clearInterval(playInterval);
         isPlaying = false;
-        btn.textContent = "▶";
+        btn.textContent = "⏩";
         btn.style.fontSize = ""; 
       }
     }, 5000);
   } else {
     clearInterval(playInterval);
-    btn.textContent = "▶";
+    btn.textContent = "⏩";
     btn.style.fontSize = ""; 
   }
 });
@@ -356,7 +359,42 @@ dateOverlay.addEventListener("click", () => {
   dateSelector.style.display = "none";
   dateOverlay.style.display = "none";
 });
+//スライダーデザイン
+const inputRange = document.getElementById("inputRange");
+const activeColor = "#377494";
+const inactiveColor = "#dddddd";
+inputRange.addEventListener("input", function() {
+  const ratio = (this.value - this.min) / (this.max - this.min) * 100;
+  this.style.background = `linear-gradient(90deg, ${activeColor} ${ratio}%, ${inactiveColor} ${ratio}%)`;
+});
+// ---- スライダーを同期 ---- //
+const range = document.getElementById("inputRange");
 
+// 日付数に応じて Range を自動設定
+range.max = availableDates.length - 1;
+
+// スライダー移動 → 日付変更（loadImage → loadDZI に変更）
+range.addEventListener("input", () => {
+  const targetIndex = parseInt(range.value, 10);
+  if (targetIndex !== currentIndex) {
+    // currentIndex = targetIndex; // loadDZI 内で currentIndex を更新するのでここでは更新しない
+    loadDZI(targetIndex);
+  }
+});
+
+// ---- 日付が変更でスライダーも更新 ---- //
+function changeDate(delta) {
+  const nextIndex = currentIndex + delta;
+  if (nextIndex < 0 || nextIndex >= availableDates.length) return;
+
+  // currentIndex = nextIndex; // loadDZI が currentIndex を設定する
+  loadDZI(nextIndex);
+
+  // range.value = currentIndex; // loadDZI の success 内で同期するためここでは不要
+}
+
+// ---- 初期同期 ---- //
+range.value = currentIndex;
 // === 初期ロード ===
 loadDZI(0);
 logZoom();

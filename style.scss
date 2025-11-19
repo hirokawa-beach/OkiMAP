@@ -6,7 +6,7 @@ $control-bg: rgba(20, 20, 20, 0.7);
 body {
   margin: 0;
   overflow: hidden;
-  font-family: "Inter", "Noto Sans JP", sans-serif;
+  font-family: "M PLUS 1p", sans-serif;
   background: #9bbdff;
 }
 
@@ -16,17 +16,40 @@ body {
   canvas {
   image-rendering: pixelated;
   transform: translateZ(0);
+ }
 }
+.inputRange {
+  position: absolute;
+  bottom: 0%;
+  left: 50%;
+  height: 2vh;
+  width: 90%;
+  transform: translateX(-50%);
+  appearance: none;
+  border: 1px solid #333333;
+  border-radius: 5px;
+  cursor: pointer;
 }
+.inputRange::-webkit-slider-thumb{
+  -webkit-appearance: none;
+  appearance: none;
+  width: 20px;
+  height: 20px;
+  border-radius: 5px;
+  background: #8d8d8d;
+  box-shadow: none;
+}
+
+
 
 #time-bar {
   position: absolute;
   bottom: 5%;
   left: 50%;
   transform: translateX(-50%);
-  width: 500px;
-  height: 100px;
-  padding: 12px 20px;
+  width: 300px;
+  height: 75px;
+  padding: 6px 20px 15px 20px;
   border-radius: 16px;
   backdrop-filter: blur(8px) saturate(180%);
   background: rgba(255, 255, 255, 0.25);
@@ -105,7 +128,7 @@ body {
     background: none;
     border: none;
     color: white;
-    font-size: 30px;
+    font-size: 25px;
     cursor: pointer;
     transition: transform 0.2s ease;
 
@@ -116,11 +139,24 @@ body {
 }
 // ==== モバイル対応 ====
 @media (max-width: 600px) {
+  #time-bar{
+    position: absolute;
+    bottom: 5%;
+    left: 50%;
+    transform: translateX(-50%);
+    width: 70%;
+    height: 80px;
+    padding: 12px 20px;
+    border-radius: 16px;
+  }
   #controls {
-    width: 90%;
+    width: 70%;
     padding: 8px 14px;
     #label {
       font-size: 16px;
     }
   }
+  .inputRange {
+    bottom: 1%;
+}
 }

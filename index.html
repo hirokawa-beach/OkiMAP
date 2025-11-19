@@ -5,14 +5,18 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>OkiMAP v1.1.0</title>
   <link rel="stylesheet" href="style.css" />
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=M+PLUS+1p:wght@100;300;400;500;700;800;900&display=swap" rel="stylesheet">
   <script src="https://cdnjs.cloudflare.com/ajax/libs/openseadragon/4.1.0/openseadragon.min.js"></script>
 </head>
 <body>
   <div id="viewer"></div>
+  <input type="range" name="range" value="0" min="0" max="25" step="1" id="inputRange" class="inputRange" />
   <!-- コンソール -->
   <div id="time-bar" class="glass draggable">
-    <div class="ticks">
-      <!-- デザイン用の目盛り -->
+    <!-- デザイン用の目盛り -->
+    <!-- <div class="ticks">
       <div class="tick major"></div>
       <div class="tick"></div><div class="tick"></div>
       <div class="tick"></div><div class="tick"></div>
@@ -20,20 +24,20 @@
       <div class="tick"></div><div class="tick"></div>
       <div class="tick"></div><div class="tick"></div>
       <div class="tick major"></div>
-    </div>
+    </div> -->
     <!-- ボタン類 -->
     <div class="date-controls">
-      <button id="prev" class="arrow">⇦</button>
+      <button id="prev" class="arrow">◀</button>
       <div class="date-display" id="date-display" style="cursor: pointer;">
         <div id="date-main">2025.09.27</div>
         <div id="date-sub">00:00 a.m. (JST)</div>
       </div>
-      <button id="next" class="arrow">⇨</button>
+      <button id="next" class="arrow">▶</button>
     </div>
 
 
     <div class="play-controls">
-      <button id="play-btn" class="play">▶</button>
+      <button id="play-btn" class="play">⏩</button>
     </div>
   </div>
 

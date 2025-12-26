@@ -140,7 +140,7 @@
     </label>
 
     <div class="row">
-      <label style="flex:0.1">
+      <label style="flex:0.2">
         zoomSnap (刻み)
         <select id="zoomSnap">
           <option value="1">1 (整数)</option>
@@ -216,6 +216,8 @@
     const tileCache = new Map(); // キャッシュ: "z/x/y" -> ImageBitmap
     const tilePixelCache = new Map(); // キャッシュ: "z/x/y" -> {w,h,data}
     const MAX_SAMPLES = 500000; // 最大サンプル数（自動間引きの閾値）
+    let isInteracting = false; // ← これが追加されてる
+    let redrawTimer = null;
 
     // コントロール要素参照
     const ctrl = {
@@ -266,11 +268,11 @@
       tileLayer = L.tileLayer('', { noWrap: true }).addTo(map);
 
       // 表示変化時に再描画
-      map.on('zoomend', onViewChange);
-      map.on('move', onViewChange);
-      map.on('resize', onResize);
-      map.on('mousemove', showCoords);
       map.on('click', onMapClick);
+      map.on('zoomstart', onInteractionStart); // ← 変更
+      map.on('zoomend', onInteractionEnd); // ← 変更
+      map.on('movestart', onInteractionStart); // ← 変更
+      map.on('moveend', onInteractionEnd);
       window.addEventListener('resize', resizeCanvasToMap);
       resizeCanvasToMap();
     }
@@ -309,12 +311,22 @@
         detectRetina: false,
         noWrap: true
       }).addTo(map);
-
-      if (renderMode === 'pixel') {
-        document.getElementById('map').classList.add('tile-pixelated');
-      } else {
-        document.getElementById('map').classList.remove('tile-pixelated');
-      }
+      // createTile をオーバーライド
+      const originalCreateTile = tileLayer.createTile.bind(tileLayer);
+      tileLayer.createTile = function(coords, done) {
+  // 負の座標は読み込まない
+  if (coords.x < 0 || coords.y < 0) {
+    const tile = document.createElement('img');
+    setTimeout(done, 0);
+    return tile;
+  }
+  return originalCreateTile(coords, done);
+};
+        if (renderMode === 'pixel') {
+          document.getElementById('map').classList.add('tile-pixelated');
+        } else {
+          document.getElementById('map').classList.remove('tile-pixelated');
+        }
 
       map.fitBounds(bounds, { maxZoom: displayMax });
 
@@ -355,23 +367,35 @@
       drawPixelGrid();
     }
 
+    function clearCanvas() {
+      const dpr = window.devicePixelRatio || 1;
+      ctx.clearRect(0, 0, canvas.width / dpr, canvas.height / dpr);
+    }
     // ビュー変化時の処理
-    function onViewChange() {
+    function onInteractionStart() {
+      isInteracting = true;
+      clearCanvas(); // オーバーレイを即座にクリア
+      pixelMarker.style.display = 'none'; // ピクセルマーカーも非表示
+      if (redrawTimer) clearTimeout(redrawTimer);
+    }
+
+    function onInteractionEnd() {
+      isInteracting = false;
       updateZoomInfo();
-      resizeCanvasToMap();
+      // 操作終了後、少し遅延してから再描画(連続操作対策)
+      if (redrawTimer) clearTimeout(redrawTimer);
+      redrawTimer = setTimeout(() => {
+        resizeCanvasToMap();
+      }, 150);
     }
 
     function onResize() {
       resizeCanvasToMap();
     }
 
-    function clearCanvas() {
-      const dpr = window.devicePixelRatio || 1;
-      ctx.clearRect(0, 0, canvas.width / dpr, canvas.height / dpr);
-    }
-
     // メイン: グリッド/オーバーレイ描画（MIN_ZOOM_TO_SHOW 未満ではスキップ）
     async function drawPixelGrid() {
+      if (isInteracting) return;
       clearCanvas();
       pixelMarker.style.display = 'none';
 

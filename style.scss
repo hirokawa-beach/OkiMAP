@@ -1,0 +1,138 @@
+// 変数定義
+$panel-bg: rgba(255, 255, 255, 0.95);
+$info-bg: rgba(255, 255, 255, 0.85);
+$font-stack: system-ui, sans-serif;
+$border-radius: 6px;
+$shadow: 0 2px 8px rgba(0, 0, 0, 0.25);
+$accent-color: rgba(255, 0, 0, 0.9);
+
+// ミックスイン（共通のフローティングボックス形状）
+@mixin floating-box($bg: $info-bg, $padding: 6px 8px, $radius: 4px) {
+  position: absolute;
+  background: $bg;
+  padding: $padding;
+  border-radius: $radius;
+  font-family: $font-stack;
+  font-size: 13px;
+  box-shadow: 0 1px 4px rgba(0, 0, 0, 0.3);
+  z-index: 2100;
+}
+
+// 基本レイアウト
+html, body {
+  height: 100%;
+  margin: 0;
+}
+
+#map {
+  width: 100%;
+  height: 100%;
+}
+
+// コントロールパネル
+.panel {
+  @include floating-box($panel-bg, 10px, $border-radius);
+  left: 8px;
+  top: 8px;
+  z-index: 1200; // キャンバスより上
+  min-width: 300px;
+  box-shadow: $shadow;
+
+  label {
+    display: block;
+    margin-top: 6px;
+  }
+
+  input[type="number"],
+  input[type="text"],
+  select {
+    width: 100%;
+    box-sizing: border-box;
+    margin-top: 4px;
+  }
+
+  .row {
+    display: flex;
+    gap: 8px;
+  }
+
+  button {
+    margin-top: 8px;
+    width: 48%;
+  }
+}
+
+// ズーム情報（右上）
+.zoom-info {
+  @include floating-box;
+  right: 8px;
+  top: 8px;
+}
+
+// 座標表示（右下）
+.coords {
+  @include floating-box(rgba(255, 255, 255, 0.9));
+  left: 8px;
+  bottom: 8px;
+}
+
+// タイルのピクセル表示
+.tile-pixelated {
+  .leaflet-tile {
+    image-rendering: pixelated;
+    image-rendering: -webkit-optimize-contrast;
+    image-rendering: crisp-edges;
+    -ms-interpolation-mode: nearest-neighbor;
+  }
+}
+
+// ヘルプ・テキスト要素
+.hint {
+  color: #444;
+  font-size: 12px;
+  margin-top: 6px;
+}
+
+.pixel-box {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  margin-top: 8px;
+
+  .color-swatch {
+    width: 36px;
+    height: 36px;
+    border-radius: 4px;
+    border: 1px solid #ccc;
+    background: #fff;
+  }
+
+  .pixel-text {
+    font-size: 12px;
+    color: #222;
+    white-space: pre-line;
+  }
+}
+
+.small-btn {
+  padding: 4px 8px;
+  font-size: 12px;
+  margin-left: 6px;
+}
+
+// キャンバス & マーカー
+#pixelGridCanvas {
+  position: absolute;
+  left: 0;
+  top: 0;
+  pointer-events: none;
+  z-index: 1150;
+}
+
+.pixel-marker {
+  position: absolute;
+  border: 1px solid $accent-color;
+  box-sizing: border-box;
+  pointer-events: none;
+  z-index: 1160;
+}

@@ -11,101 +11,80 @@
 <body>
   <div id="map"></div>
 
-  <div class="panel" id="controlPanel">
-    <strong>タイル表示設定</strong>
-    <label>
-      タイル URL テンプレート
-      <input type="text" id="tileUrl" value="img/tiles/{z}/{x}/{y}.png" />
-    </label>
+  <!-- 設定ボタン -->
+  <button id="settingsBtn" class="small-btn" aria-haspopup="dialog" aria-expanded="false" title="設定">⚙️</button>
 
-    <div class="row">
-      <div style="flex:1">
-        <label>元画像幅 (px)
-          <input type="number" id="imgW" value="9000" min="1" />
-        </label>
-      </div>
-      <div style="flex:1">
-        <label>元画像高さ (px)
-          <input type="number" id="imgH" value="9000" min="1" />
-        </label>
-      </div>
+  <div class="panel hidden" id="controlPanel" role="dialog" aria-modal="true" aria-label="表示設定">
+    <div style="display:flex; justify-content:space-between; align-items:center;">
+      <strong>表示設定</strong>
+      <span class="hint" style="font-size:12px; color:#666;">閉じるには右上の⚙️をもう一度押してください</span>
     </div>
 
-    <div class="row">
-      <div style="flex:1">
-        <label>タイルサイズ (px)
-          <input type="number" id="tileSize" value="256" min="16" />
-        </label>
-      </div>
-      <div style="flex:1">
-        <label>ネイティブ max (生成済み)
-          <input type="number" id="nativeMax" value="7" min="0" />
-        </label>
-      </div>
+    <div style="margin-top:8px; display:flex; gap:8px; align-items:center; flex-wrap:wrap;">
+      <div class="pill">タイルサイズ: 256px</div>
+      <div class="pill">ネイティブ max: 7</div>
+      <div class="pill">表示上 maxZoom: 12</div>
+      <div class="pill">表示法: 滑らか</div>
     </div>
 
-    <label>
-      表示上の maxZoom (もっと拡大したければ大きく)
-      <input type="number" id="displayMax" value="12" min="0" />
-    </label>
-
-    <div class="row">
-      <label style="flex:0.2">
-        zoomSnap (刻み)
+    <div class="row" style="margin-top:12px;">
+      <label style="flex:0.5">
+        zoomSnap
         <select id="zoomSnap">
-          <option value="1">1 (整数)</option>
+          <option value="1">1</option>
           <option value="0.5">0.5</option>
           <option value="0.25">0.25</option>
           <option value="0.1">0.1</option>
         </select>
       </label>
-      <label style="flex:1">
-        表示法
-        <select id="renderMode">
-          <option value="smooth">滑らか（default）</option>
-          <option value="pixel">ピクセル拡大（pixelated）</option>
-        </select>
+
+      <label style="flex:1; display:flex; gap:8px; align-items:center;">
+        <input type="checkbox" id="pixelPickerToggle" /> ピクセル選択モード
       </label>
     </div>
 
-    <div class="row">
-      <button id="applyBtn">設定を適用</button>
-      <button id="fitBtn">全体表示 (fitBounds)</button>
-    </div>
-
-    <label style="margin-top:8px">
-      <input type="checkbox" id="pixelPickerToggle" /> ピクセル選択モードを有効にする
+    <label style="margin-top:8px; display:flex; gap:8px; align-items:center;">
+      <input type="checkbox" id="pixelGridToggle" /> ピクセルグリッドを表示（zoom ≥ 8 のとき）
     </label>
 
-    <label style="margin-top:6px">
-      <input type="checkbox" id="pixelGridToggle" /> ピクセルグリッドを表示 (ネイティブズーム基準、表示は zoom ≥ 8 のときのみ)
+    <label style="margin-top:6px; display:flex; gap:8px; align-items:center;">
+      <input type="checkbox" id="colorizeToggle" /> ピクセル色でオーバーレイ（zoom ≥ 8 のとき）
     </label>
 
-    <label style="margin-top:6px">
-      <input type="checkbox" id="colorizeToggle" /> ピクセル色でオーバーレイ（Colorize、表示は zoom ≥ 8 のときのみ）
-    </label>
-
-    <div class="row" style="margin-top:6px;">
-      <label style="flex:1">サンプリング step (1 = 全ピクセル、2 = 2pxごと...)<input type="number" id="sampleStep" value="1" min="1" style="width:80px; margin-left:6px;" /></label>
+    <div class="row" style="margin-top:8px;">
+      <label style="flex:1">サンプリング step<input type="number" id="sampleStep" value="1" min="1" style="width:80px; margin-left:6px;" /></label>
       <label style="flex:1">不透明度 <input type="range" id="overlayOpacity" min="0" max="1" step="0.05" value="1.0" /></label>
     </div>
 
-    <label style="margin-top:6px">
-      最小スクリーン間隔 (px)。グリッド/オーバーレイの間引き閾値:
-      <input type="number" id="gridMinScreen" value="1" min="1" style="width:70px; display:inline-block; margin-left:8px;" />
+    <label style="margin-top:8px">
+      最小スクリーン間隔 (px)
+      <input type="number" id="gridMinScreen" value="1" min="1" style="width:80px; margin-left:8px;" />
     </label>
 
-    <div id="pixelOutput" class="pixel-box" style="display:none;">
-      <div class="color-swatch" id="colorSwatch"></div>
-      <div class="pixel-text" id="pixelText">pixel: --, --<br>RGBA: --</div>
-      <button id="copyColor" class="small-btn">HEXをコピー</button>
-      <button id="clearCache" class="small-btn">タイルキャッシュクリア</button>
+    <div class="row" style="margin-top:12px;">
+      <button id="applyBtn">設定を適用</button>
+      <button id="fitBtn">全体表示</button>
     </div>
 
-    <div class="hint">
-      - オーバーレイとグリッドはデフォルトで zoom ≥ 8 の時のみ描画されます。閾値を変えたい場合はコード内の MIN_ZOOM_TO_SHOW を調整してください。<br>
-      - tiles が別ドメインの場合は CORS ヘッダが必要です。
+    <div class="hint" style="margin-top:12px;">
+      - オーバーレイ／グリッドは zoom ≥ 8 のとき描画します。<br>
     </div>
+  </div>
+
+  <!-- 画面中央下：日付バー（両隣に日付操作ボタン） -->
+  <div id="dateBar" aria-label="日付選択バー">
+    <button id="prevDate" class="date-btn" title="前日">◀</button>
+    <input type="date" id="dateInput" />
+    <span id="timeLabel" class="time-label">--:--</span>
+    <button id="nextDate" class="date-btn" title="翌日">▶</button>
+  </div>
+
+  <!-- ピクセル情報（設定ダイアログの外） -->
+  <div id="pixelOutput" class="pixel-box" style="display:none;">
+    <div class="color-swatch" id="colorSwatch"></div>
+    <div class="pixel-text" id="pixelText">pixel: --, --<br>RGBA: --</div>
+    <button id="copyColor" class="small-btn">HEXをコピー</button>
+    <button id="clearCache" class="small-btn">キャッシュクリア</button>
   </div>
 
   <div class="zoom-info" id="zoomInfo">zoom: --</div>

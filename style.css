@@ -1,112 +1,235 @@
+@charset "UTF-8";
+* {
+  box-sizing: border-box;
+}
+
 html, body {
   height: 100%;
   margin: 0;
+  font-family: Inter, system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+  background: linear-gradient(180deg, #e6f2ff 0%, #ffffff 100%);
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
 }
 
+/* マップ全画面 */
 #map {
   width: 100%;
   height: 100%;
+  position: relative;
 }
 
+/* 設定ボタン */
+#settingsBtn {
+  position: absolute;
+  left: 18px;
+  top: 18px;
+  z-index: 1400;
+  background: linear-gradient(180deg, #fff 0%, #f6f8fb 100%);
+  border: 1px solid rgba(0, 0, 0, 0.08);
+  padding: 8px 10px;
+  border-radius: 10px;
+  box-shadow: 0 6px 18px rgba(15, 30, 60, 0.12);
+  cursor: pointer;
+  transition: transform 150ms ease, box-shadow 150ms ease;
+}
+
+#settingsBtn:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 10px 24px rgba(15, 30, 60, 0.14);
+}
+
+/* パネル */
 .panel {
   position: absolute;
-  background: rgba(255, 255, 255, 0.95);
-  padding: 10px;
-  border-radius: 6px;
-  font-family: system-ui, sans-serif;
-  font-size: 13px;
-  box-shadow: 0 1px 4px rgba(0, 0, 0, 0.3);
-  z-index: 2100;
-  left: 8px;
-  top: 8px;
-  z-index: 1200;
-  min-width: 300px;
-  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.25);
-}
-.panel label {
-  display: block;
-  margin-top: 6px;
-}
-.panel input[type=number],
-.panel input[type=text],
-.panel select {
-  width: 100%;
-  box-sizing: border-box;
-  margin-top: 4px;
-}
-.panel .row {
-  display: flex;
-  gap: 8px;
-}
-.panel button {
-  margin-top: 8px;
-  width: 48%;
+  left: 18px;
+  top: 60px;
+  z-index: 1300;
+  min-width: 340px;
+  padding: 14px;
+  border-radius: 10px;
+  background: rgba(255, 255, 255, 0.85);
+  -webkit-backdrop-filter: blur(6px) saturate(1.05);
+          backdrop-filter: blur(6px) saturate(1.05);
+  box-shadow: 0 8px 30px rgba(0, 0, 0, 0.35);
+  border: 1px solid rgba(255, 255, 255, 0.6);
+  transition: transform 220ms cubic-bezier(0.2, 0.9, 0.2, 1), opacity 180ms ease;
+  transform-origin: top left;
 }
 
+.panel.hidden {
+  opacity: 0;
+  transform: scale(0.985) translateY(-6px);
+  pointer-events: none;
+}
+
+/* pill */
+.pill {
+  background: rgba(0, 0, 0, 0.05);
+  padding: 6px 10px;
+  border-radius: 999px;
+  font-size: 12px;
+  color: #222;
+}
+
+/* 入力等 */
+.panel label {
+  display: block;
+  font-size: 13px;
+  color: #222;
+  margin-top: 6px;
+}
+
+.panel input[type=number], .panel input[type=text], .panel select, .panel input[type=date] {
+  width: 100%;
+  margin-top: 6px;
+  padding: 8px;
+  border-radius: 8px;
+  border: 1px solid rgba(0, 0, 0, 0.08);
+  background: rgba(255, 255, 255, 0.95);
+}
+
+/* 行 */
+.row {
+  display: flex;
+  gap: 10px;
+  align-items: center;
+}
+
+/* ボタン */
+button {
+  -webkit-appearance: none;
+     -moz-appearance: none;
+          appearance: none;
+  border: none;
+  background: linear-gradient(180deg, #1f6feb, #0063d1);
+  color: white;
+  padding: 8px 12px;
+  border-radius: 8px;
+  cursor: pointer;
+  font-weight: 600;
+}
+
+button.small-btn {
+  background: linear-gradient(180deg, #ffffff, #f3f6fb);
+  color: #222;
+  border: 1px solid rgba(0, 0, 0, 0.06);
+  padding: 6px 8px;
+  border-radius: 8px;
+}
+
+button:active {
+  transform: translateY(1px);
+}
+
+/* ヒント */
+.hint {
+  color: #666;
+  font-size: 12px;
+  margin-top: 8px;
+}
+
+/* Date bar: 画面下中央 */
+#dateBar {
+  position: absolute;
+  left: 50%;
+  bottom: 18px;
+  transform: translateX(-50%);
+  z-index: 1400;
+  display: flex;
+  gap: 10px;
+  align-items: center;
+  background: rgba(255, 255, 255, 0.9);
+  padding: 8px 12px;
+  border-radius: 999px;
+  box-shadow: 0 10px 30px rgba(8, 20, 50, 0.12);
+  border: 1px solid rgba(255, 255, 255, 0.6);
+}
+
+#dateBar input[type=date] {
+  padding: 8px 10px;
+  border-radius: 8px;
+  border: 1px solid rgba(0, 0, 0, 0.06);
+  background: white;
+}
+
+/* time label */
+.time-label {
+  font-weight: 600;
+  color: #111;
+  padding: 4px 8px;
+  border-radius: 6px;
+  background: rgba(0, 0, 0, 0.03);
+  font-size: 13px;
+}
+
+/* date buttons */
+.date-btn {
+  background: transparent;
+  border: none;
+  font-size: 16px;
+  padding: 6px 8px;
+  cursor: pointer;
+}
+
+/* ピクセル情報ボックス（ダイアログ外） */
+#pixelOutput {
+  position: absolute;
+  left: 50%;
+  bottom: 88px; /* dateBar より上に表示 */
+  transform: translateX(-50%);
+  z-index: 1400;
+  display: flex;
+  gap: 10px;
+  align-items: center;
+  background: rgba(255, 255, 255, 0.92);
+  padding: 8px 12px;
+  border-radius: 999px;
+  box-shadow: 0 10px 30px rgba(8, 20, 50, 0.12);
+  border: 1px solid rgba(255, 255, 255, 0.6);
+}
+
+#pixelOutput .pixel-text {
+  font-size: 13px;
+  color: #111;
+  white-space: pre-line;
+}
+
+/* zoom / coords boxes */
 .zoom-info {
   position: absolute;
-  background: rgba(255, 255, 255, 0.85);
-  padding: 6px 8px;
-  border-radius: 4px;
-  font-family: system-ui, sans-serif;
+  right: 18px;
+  top: 18px;
+  z-index: 1300;
+  background: rgba(255, 255, 255, 0.9);
+  padding: 8px 10px;
+  border-radius: 8px;
+  box-shadow: 0 8px 20px rgba(8, 20, 50, 0.08);
   font-size: 13px;
-  box-shadow: 0 1px 4px rgba(0, 0, 0, 0.3);
-  z-index: 2100;
-  right: 8px;
-  top: 8px;
 }
 
 .coords {
   position: absolute;
+  left: 18px;
+  bottom: 80px;
+  z-index: 1300;
   background: rgba(255, 255, 255, 0.9);
-  padding: 6px 8px;
-  border-radius: 4px;
-  font-family: system-ui, sans-serif;
+  padding: 8px 10px;
+  border-radius: 8px;
+  box-shadow: 0 8px 20px rgba(8, 20, 50, 0.08);
   font-size: 13px;
-  box-shadow: 0 1px 4px rgba(0, 0, 0, 0.3);
-  z-index: 2100;
-  left: 8px;
-  bottom: 8px;
 }
 
-.tile-pixelated .leaflet-tile {
-  image-rendering: pixelated;
-  image-rendering: -webkit-optimize-contrast;
-  image-rendering: crisp-edges;
-  -ms-interpolation-mode: nearest-neighbor;
-}
-
-.hint {
-  color: #444;
-  font-size: 12px;
-  margin-top: 6px;
-}
-
-.pixel-box {
-  display: flex;
-  gap: 8px;
-  align-items: center;
-  margin-top: 8px;
-}
-.pixel-box .color-swatch {
+/* color swatch */
+.color-swatch {
   width: 36px;
   height: 36px;
-  border-radius: 4px;
-  border: 1px solid #ccc;
+  border-radius: 6px;
+  border: 1px solid rgba(0, 0, 0, 0.06);
   background: #fff;
 }
-.pixel-box .pixel-text {
-  font-size: 12px;
-  color: #222;
-  white-space: pre-line;
-}
 
-.small-btn {
-  padding: 4px 8px;
-  font-size: 12px;
-  margin-left: 6px;
-}
-
+/* canvas & marker */
 #pixelGridCanvas {
   position: absolute;
   left: 0;
@@ -117,8 +240,16 @@ html, body {
 
 .pixel-marker {
   position: absolute;
-  border: 1px solid rgba(255, 0, 0, 0.9);
+  border: 2px solid #ff3b30;
   box-sizing: border-box;
   pointer-events: none;
   z-index: 1160;
+}
+
+/* tile pixelated helper (still available) */
+.tile-pixelated .leaflet-tile {
+  image-rendering: pixelated;
+  image-rendering: -webkit-optimize-contrast;
+  image-rendering: crisp-edges;
+  -ms-interpolation-mode: nearest-neighbor;
 }/*# sourceMappingURL=style.css.map */

@@ -67,16 +67,23 @@
     </div>
 
     <div class="hint" style="margin-top:12px;">
-      - オーバーレイ／グリッドは zoom ≥ 8 のとき描画します。<br>
+      - オーバーレイ／グリッドはデフォルト zoom ≥ 8 のとき描画します。閾値はコード内の MIN_ZOOM_TO_SHOW を編集してください。<br>
     </div>
   </div>
 
-  <!-- 画面中央下：日付バー（両隣に日付操作ボタン） -->
+  <!-- 画面中央下：日付バー（上に日付選択コンソールを置き、その直下にスライダー） -->
   <div id="dateBar" aria-label="日付選択バー">
     <button id="prevDate" class="date-btn" title="前日">◀</button>
-    <input type="date" id="dateInput" />
+    <!-- 日付は timestamps.txt にある日付のみ選べるセレクトに変更 -->
+    <select id="dateSelect" aria-label="日付を選択"></select>
     <span id="timeLabel" class="time-label">--:--</span>
     <button id="nextDate" class="date-btn" title="翌日">▶</button>
+  </div>
+
+  <!-- スライダー (日付/時刻をスムーズに切替) 下に配置 -->
+  <div id="dateSliderBar" aria-hidden="true">
+    <input type="range" id="dateSlider" min="0" max="0" step="1" value="0" />
+    <div id="dateSliderInfo" class="hint">0 / 0</div>
   </div>
 
   <!-- ピクセル情報（設定ダイアログの外） -->

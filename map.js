@@ -1,3 +1,4 @@
+// https://github.com/hirokawa-beach/OkiMAP/blob/main/map_interaction.js
 // --- 設定 ---
 const MIN_ZOOM_TO_SHOW = 8; // グリッド／オーバーレイを描画する最小ズーム
 
@@ -11,26 +12,28 @@ const RENDER_MODE = 'smooth'; // 固定
 const IMG_W = 9000;
 const IMG_H = 9000;
 
-// --- タイムスタンプリスト設定 ---
+// --- タ��ムスタンプリスト設定 ---
 const TIMESTAMPS_URL = 'https://hb-raspi1.wplaceoki.com/okimap/timestamps.txt';
 
 // --- 状態とキャッシュ ---
-let map, tileLayer;
-const tileCache = new Map(); // キャッシュ: "z/x/y" -> ImageBitmap
-const tilePixelCache = new Map(); // キャッシュ: "z/x/y" -> {w,h,data}
+let map;
+let activeTileLayer = null; // 現在表示中の tile layer（ダブルバッファ用）
+let loadingSwitch = null;   // 進行中の切替操作の参照（中断用）
+const tileCache = new Map(); // キャッシュ: "timestamp/z/x/y" -> ImageBitmap
+const tilePixelCache = new Map(); // キャッシュ: "timestamp/z/x/y" -> {w,h,data}
 const MAX_SAMPLES = 500000; // 最大サンプル数（自動間引きの閾値）
 let isInteracting = false;
 let redrawTimer = null;
 
 // タイムスタンプデータ構造
-// Map: 'YYYYMMDD' -> ['hhmm', 'hhmm', ...] (降順: 最新が先頭)
 const timestampsByDate = new Map();
 let timestampLines = []; // ファイルの行順を保持（上から順に）
 let currentTimestampFull = null; // 'YYYYMMDDhhmm' or null
+let uniqueDates = []; // ['YYYY-MM-DD', ...] for select
 
-// コントロール要素参照（pixelOutput はダイアログ外へ移動）
+// ----- UI 要素参照 -----
 const ctrl = {
-    dateInput: document.getElementById('dateInput'),
+    dateSelect: document.getElementById('dateSelect'),
     prevDate: document.getElementById('prevDate'),
     nextDate: document.getElementById('nextDate'),
     zoomSnap: document.getElementById('zoomSnap'),
@@ -51,7 +54,10 @@ const ctrl = {
     settingsBtn: document.getElementById('settingsBtn'),
     controlPanel: document.getElementById('controlPanel'),
     gridMinScreen: document.getElementById('gridMinScreen'),
-    timeLabel: document.getElementById('timeLabel')
+    timeLabel: document.getElementById('timeLabel'),
+    dateSlider: document.getElementById('dateSlider'),
+    dateSliderInfo: document.getElementById('dateSliderInfo'),
+    dateSliderBar: document.getElementById('dateSliderBar')
 };
 
 const canvas = document.getElementById('pixelGridCanvas');
@@ -61,15 +67,10 @@ const pixelMarker = document.getElementById('pixelMarker');
 // ベース URL - 日付/時刻フォルダを使う
 const BASE_TILE_HOST = 'https://hb-raspi1.wplaceoki.com/okimap/img';
 
-// タイル URL 組み立て（currentTimestampFull があれば YYYYMMDDhhmm を使う）
-function buildTileUrl(z, x, y) {
-  if (currentTimestampFull) {
-    return `${BASE_TILE_HOST}/${currentTimestampFull}/${z}/${x}/${y}.png?native=${z}`;
-  } else {
-    const iso = ctrl.dateInput.value || '';
-    const compactDate = iso.replace(/-/g, '');
-    return `${BASE_TILE_HOST}/${compactDate}/${z}/${x}/${y}.png?native=${z}`;
-  }
+// タイル URL 組み立て（explicitStamp が渡ればそれを使う）
+function buildTileUrlForStamp(stamp, z, x, y) {
+  const stampPart = stamp || (ctrl.dateSelect?.value || '').replace(/-/g,'') || '';
+  return `${BASE_TILE_HOST}/${stampPart}/${z}/${x}/${y}.png?native=${z}`;
 }
 
 // --- タイムスタンプリスト取得 ---
@@ -89,9 +90,9 @@ async function fetchTimestampList() {
 function parseTimestampList(text) {
   timestampsByDate.clear();
   timestampLines = [];
+  uniqueDates = [];
   const lines = text.split(/\r?\n/).map(l => l.trim()).filter(Boolean);
   for (const line of lines) {
-    // accept formats like 202512310830 (12 chars). ignore others.
     if (!/^\d{12}$/.test(line)) continue;
     timestampLines.push(line);
     const datePart = line.slice(0, 8); // YYYYMMDD
@@ -103,26 +104,166 @@ function parseTimestampList(text) {
   for (const [k, arr] of timestampsByDate.entries()) {
     arr.sort((a, b) => b.localeCompare(a));
   }
+  // build uniqueDates (YYYY-MM-DD) sorted descending (latest first)
+  const dates = Array.from(timestampsByDate.keys()).sort((a,b) => b.localeCompare(a));
+  uniqueDates = dates.map(d => `${d.slice(0,4)}-${d.slice(4,6)}-${d.slice(6,8)}`);
+  populateDateSelect();
+  setupSlider();
 }
 
-// 日付に対応する最新時刻を currentTimestampFull にセットして UI を更新
-async function updateCurrentTimestampForDate(dateISO) {
-  if (!dateISO) {
-    currentTimestampFull = null;
-    ctrl.timeLabel.textContent = '--:--';
+// populate date select with available dates only
+function populateDateSelect() {
+  const sel = ctrl.dateSelect;
+  if (!sel) return;
+  sel.innerHTML = '';
+  for (const d of uniqueDates) {
+    const opt = document.createElement('option');
+    opt.value = d;
+    opt.textContent = d;
+    sel.appendChild(opt);
+  }
+}
+
+// --- スライダー関連 ---
+function setupSlider() {
+  const slider = ctrl.dateSlider;
+  const info = ctrl.dateSliderInfo;
+  if (!slider || !info) return;
+  if (!timestampLines || timestampLines.length === 0) {
+    if (ctrl.dateSliderBar) ctrl.dateSliderBar.style.display = 'none';
     return;
   }
-  const compact = dateISO.replace(/-/g, '');
-  const times = timestampsByDate.get(compact);
-  if (times && times.length > 0) {
-    const hhmm = times[0]; // latest for that date
-    currentTimestampFull = `${compact}${hhmm}`; // YYYYMMDDhhmm
-    ctrl.timeLabel.textContent = `${hhmm.slice(0,2)}:${hhmm.slice(2)}`;
-  } else {
-    // no timestamp for this date -> fall back to per-day folder (clear current timestamp)
-    currentTimestampFull = null;
-    ctrl.timeLabel.textContent = '--:--';
+  ctrl.dateSliderBar.style.display = 'flex';
+  slider.min = 0;
+  slider.max = Math.max(0, timestampLines.length - 1);
+  const idx = currentTimestampFull ? timestampLines.indexOf(currentTimestampFull) : 0;
+  slider.value = idx >= 0 ? idx : 0;
+  info.textContent = `${parseInt(slider.value, 10) + 1} / ${timestampLines.length}`;
+}
+
+// set current timestamp by index from timestampLines
+let sliderUpdateTimer = null;
+function setTimestampByIndex(index, { preserveView = true } = {}) {
+  if (!timestampLines || index < 0 || index >= timestampLines.length) return;
+  currentTimestampFull = timestampLines[index];
+  const datePart = currentTimestampFull.slice(0,8);
+  const timePart = currentTimestampFull.slice(8);
+  const dateISO = `${datePart.slice(0,4)}-${datePart.slice(4,6)}-${datePart.slice(6,8)}`;
+  if (ctrl.dateSelect) ctrl.dateSelect.value = dateISO;
+  if (ctrl.timeLabel) ctrl.timeLabel.textContent = `${timePart.slice(0,2)}:${timePart.slice(2)}`;
+  // 切替（ダブルバッファでフェード）
+  switchToTimestamp(currentTimestampFull);
+}
+
+// find index of timestamp (or -1)
+function findTimestampIndex(ts) {
+  return timestampLines.indexOf(ts);
+}
+
+// --- タイルレイヤ（タイムスタンプ別）を作るヘルパー ---
+function createTileLayerForStamp(stamp) {
+  const layer = L.tileLayer('', {
+    tileSize: TILE_SIZE,
+    maxNativeZoom: NATIVE_MAX,
+    maxZoom: DISPLAY_MAX,
+    detectRetina: false,
+    noWrap: true,
+    crossOrigin: true
+  });
+
+  // override createTile to use the stamp captured by closure
+  const originalCreateTile = layer.createTile.bind(layer);
+  layer.createTile = function (coords, done) {
+    if (coords.x < 0 || coords.y < 0) {
+      const tile = document.createElement('img');
+      setTimeout(done, 0);
+      return tile;
+    }
+    const tileEl = originalCreateTile(coords, done);
+    try { tileEl.crossOrigin = 'anonymous'; } catch (e) {}
+    const z = coords.z, x = coords.x, y = coords.y;
+    setTimeout(() => {
+      tileEl.src = buildTileUrlForStamp(stamp, z, x, y);
+    }, 0);
+    return tileEl;
+  };
+
+  return layer;
+}
+
+// 切替本体（ダブルバッファ）:
+// newStamp: 'YYYYMMDDhhmm' or null (use ctrl.dateSelect value)
+// 動作: 新レイヤを opacity=0 で追加し load を待ってフェード差し替え
+function switchToTimestamp(newStamp) {
+  // 中の進行中切替があればキャンセル（既にaddされたレイヤはタイムアウトで削除されるが、ここでは簡単に扱う）
+  if (loadingSwitch && loadingSwitch.abort) {
+    try { loadingSwitch.abort(); } catch (e) {}
+    loadingSwitch = null;
   }
+
+  const stampKey = newStamp || (ctrl.dateSelect?.value || '').replace(/-/g,'') || null;
+
+  // create new layer using stampKey (if null, create with date-based empty stamp -> buildTileUrlForStamp handles it)
+  const newLayer = createTileLayerForStamp(stampKey);
+
+  // ensure initially invisible
+  newLayer.setOpacity(0);
+  newLayer.addTo(map);
+
+  // prepare a handle to possibly abort later
+  let aborted = false;
+  loadingSwitch = { abort: () => { aborted = true; } };
+
+  // when all visible tiles are loaded for this layer
+  const onLoadHandler = () => {
+    if (aborted) {
+      // remove newLayer and bail out
+      try { map.removeLayer(newLayer); } catch (e) {}
+      loadingSwitch = null;
+      return;
+    }
+
+    // prepare CSS transition for smooth crossfade
+    const newContainer = newLayer.getContainer && newLayer.getContainer();
+    const oldContainer = activeTileLayer && activeTileLayer.getContainer && activeTileLayer.getContainer();
+    if (newContainer) newContainer.style.transition = 'opacity 320ms ease';
+    if (oldContainer) oldContainer.style.transition = 'opacity 320ms ease';
+
+    // trigger repaint then crossfade
+    requestAnimationFrame(() => {
+      try {
+        newLayer.setOpacity(1);
+      } catch (e) {}
+      if (activeTileLayer) {
+        try { activeTileLayer.setOpacity(0); } catch (e) {}
+      }
+    });
+
+    // after transition, remove old layer
+    setTimeout(() => {
+      if (activeTileLayer && map.hasLayer(activeTileLayer)) {
+        try { map.removeLayer(activeTileLayer); } catch (e) {}
+      }
+      activeTileLayer = newLayer;
+      loadingSwitch = null;
+      // redraw overlays/canvas
+      drawPixelGrid();
+    }, 360);
+  };
+
+  // if new layer errors loading at least one tile, still attempt to swap after timeout to avoid indefinite hang
+  let loadTimeout = setTimeout(() => {
+    // if not loaded yet, still perform immediate swap so UI isn't stuck
+    if (!aborted) onLoadHandler();
+  }, 5000);
+
+  newLayer.once('load', () => {
+    clearTimeout(loadTimeout);
+    onLoadHandler();
+  });
+  newLayer.once('tileerror', () => {
+    // ignore single tile errors; rely on 'load' or timeout
+  });
 }
 
 // --- マップ初期化 ---
@@ -131,12 +272,15 @@ function initMap() {
         crs: L.CRS.Simple,
         minZoom: 0,
         maxZoom: DISPLAY_MAX,
-        zoomSnap: parseFloat(ctrl.zoomSnap.value),
+        zoomSnap: parseFloat(ctrl.zoomSnap?.value || 1),
         zoomDelta: 1,
         inertia: false
     });
 
-    tileLayer = L.tileLayer('', { noWrap: true }).addTo(map);
+    // まずはダミーの activeTileLayer を作っておく（空のstampで）
+    activeTileLayer = createTileLayerForStamp(null);
+    activeTileLayer.setOpacity(1);
+    activeTileLayer.addTo(map);
 
     // 表示変化時に再描画
     map.on('click', onMapClick);
@@ -144,84 +288,55 @@ function initMap() {
     map.on('zoomend', onInteractionEnd);
     map.on('movestart', onInteractionStart);
     map.on('moveend', onInteractionEnd);
+    map.on('mousemove', (e) => { showCoords(e); });
     window.addEventListener('resize', resizeCanvasToMap);
     resizeCanvasToMap();
+
+    // fit bounds once tileset known size
+    const southWest = map.unproject([0, IMG_H], NATIVE_MAX);
+    const northEast = map.unproject([IMG_W, 0], NATIVE_MAX);
+    const bounds = new L.LatLngBounds(southWest, northEast);
+    map.fitBounds(bounds, { maxZoom: DISPLAY_MAX });
+
+    updateZoomInfo();
 }
 
-// レイヤー削除
-function clearLayer() {
-    if (tileLayer) {
-        try { map.removeLayer(tileLayer); } catch (e) { }
-        tileLayer = null;
-    }
-}
+// 設定を適用（レイヤーを完全に破棄せず、存在する場合は再描画）
+function applySettings(opts = {}) {
+    const zoomSnap = parseFloat(ctrl.zoomSnap?.value || 1);
 
-// 設定を適用
-function applySettings() {
-    const zoomSnap = parseFloat(ctrl.zoomSnap.value);
+    if (!map) return;
 
     map.options.maxZoom = DISPLAY_MAX;
     map.options.zoomSnap = zoomSnap;
 
-    const southWest = map.unproject([0, IMG_H], NATIVE_MAX);
-    const northEast = map.unproject([IMG_W, 0], NATIVE_MAX);
-    const bounds = new L.LatLngBounds(southWest, northEast);
+    // 再描画（レイヤーは switchToTimestamp で差し替えるので、ここでは activeTileLayer を redraw）
+    if (activeTileLayer) {
+      try { activeTileLayer.redraw(); } catch (e) {}
+    }
 
-    clearLayer();
-    tileLayer = L.tileLayer('', {
-        tileSize: TILE_SIZE,
-        maxNativeZoom: NATIVE_MAX,
-        maxZoom: DISPLAY_MAX,
-        detectRetina: false,
-        noWrap: true
-    });
-
-    // createTile をオーバーライドして src を動的にセット
-    const originalCreateTile = tileLayer.createTile.bind(tileLayer);
-    tileLayer.createTile = function (coords, done) {
-        if (coords.x < 0 || coords.y < 0) {
-            const tile = document.createElement('img');
-            setTimeout(done, 0);
-            return tile;
-        }
-        const tileEl = originalCreateTile(coords, done);
-        const z = coords.z;
-        const x = coords.x;
-        const y = coords.y;
-        setTimeout(() => {
-          tileEl.src = buildTileUrl(z, x, y);
-        }, 0);
-        return tileEl;
-    };
-
-    tileLayer.addTo(map);
-
-    // renderMode 固定: smooth
-    document.getElementById('map').classList.remove('tile-pixelated');
-
-    map.fitBounds(bounds, { maxZoom: DISPLAY_MAX });
+    document.getElementById('map')?.classList.remove('tile-pixelated');
 
     updateZoomInfo();
-    console.log('Applied settings:', { zoomSnap, date: ctrl.dateInput.value, timestamp: currentTimestampFull });
+    console.log('Applied settings:', { zoomSnap, date: ctrl.dateSelect?.value, timestamp: currentTimestampFull });
 
-    // キャッシュクリアして再描画
-    tileCache.clear();
-    tilePixelCache.clear();
     drawPixelGrid();
 }
 
 // ズーム情報更新
 function updateZoomInfo() {
+    if (!map) return;
     const z = map.getZoom();
     const scale = Math.pow(2, z - NATIVE_MAX);
     const scaleText = z >= NATIVE_MAX ? `×${scale}` : `1/${Math.pow(2, NATIVE_MAX - z)}`;
-    ctrl.zoomInfo.textContent = `zoom: ${z} (nativeMax: ${NATIVE_MAX}, scale: ${scaleText})`;
+    if (ctrl.zoomInfo) ctrl.zoomInfo.textContent = `zoom: ${z} (nativeMax: ${NATIVE_MAX}, scale: ${scaleText})`;
 }
 
-// マウス座標表示
+// マウス座標表示（ピクセル単位）
 function showCoords(e) {
+    if (!map) return;
     const p = map.project(e.latlng, NATIVE_MAX);
-    ctrl.coordsInfo.textContent = `pixel: ${Math.round(p.x)} , ${Math.round(p.y)}`;
+    if (ctrl.coordsInfo) ctrl.coordsInfo.textContent = `pixel: ${Math.round(p.x)} , ${Math.round(p.y)}`;
 }
 
 // キャンバスサイズをマップに合わせる
@@ -258,7 +373,7 @@ function onInteractionEnd() {
     }, 150);
 }
 
-// メイン: グリッド/オーバーレイ描画（MIN_ZOOM_TO_SHOW 未満ではスキップ）
+// メイン描画（既存ロジックを保持）
 async function drawPixelGrid() {
     if (!map) return;
     if (isInteracting) return;
@@ -266,10 +381,15 @@ async function drawPixelGrid() {
     pixelMarker.style.display = 'none';
 
     const currentZoom = map.getZoom();
-    if (currentZoom < MIN_ZOOM_TO_SHOW) return;
 
-    if (ctrl.colorizeToggle.checked) await drawColorOverlay();
-    if (ctrl.pixelGridToggle.checked) {
+    if (currentZoom < MIN_ZOOM_TO_SHOW) {
+        return;
+    }
+
+    if (ctrl.colorizeToggle?.checked) {
+        await drawColorOverlay();
+    }
+    if (ctrl.pixelGridToggle?.checked) {
         const p0 = map.latLngToContainerPoint(map.unproject([0, 0], NATIVE_MAX));
         const p1x = map.latLngToContainerPoint(map.unproject([1, 0], NATIVE_MAX));
         const p1y = map.latLngToContainerPoint(map.unproject([0, 1], NATIVE_MAX));
@@ -281,17 +401,20 @@ async function drawPixelGrid() {
     }
 }
 
-// グリッド線を描く
+// 以降は既存の drawGridLines / drawColorOverlay / fetchTileBitmap / readPixelFromTileBitmap / onMapClick / showPixelMarker
+// （ここではコードを省略せずに同じロジックを続けます — 前バージョンからの変更点は fetchTileBitmap のキーに stamp を含めるところです）
+
 function drawGridLines(step, pixelScreenX, pixelScreenY) {
+    const nativeMax = NATIVE_MAX;
     const topLeftLatLng = map.containerPointToLatLng([0, 0]);
     const bottomRightLatLng = map.containerPointToLatLng([map.getSize().x, map.getSize().y]);
-    const topLeftPx = map.project(topLeftLatLng, NATIVE_MAX);
-    const bottomRightPx = map.project(bottomRightLatLng, NATIVE_MAX);
+    const topLeftPx = map.project(topLeftLatLng, nativeMax);
+    const bottomRightPx = map.project(bottomRightLatLng, nativeMax);
     const startX = Math.floor(Math.min(topLeftPx.x, bottomRightPx.x));
     const endX = Math.ceil(Math.max(topLeftPx.x, bottomRightPx.x));
     const startY = Math.floor(Math.min(topLeftPx.y, bottomRightPx.y));
     const endY = Math.ceil(Math.max(topLeftPx.y, bottomRightPx.y));
-    const contStart = map.latLngToContainerPoint(map.unproject([startX, startY], NATIVE_MAX));
+    const contStart = map.latLngToContainerPoint(map.unproject([startX, startY], nativeMax));
     const dX = pixelScreenX;
     const dY = pixelScreenY;
 
@@ -339,21 +462,20 @@ function drawGridLines(step, pixelScreenX, pixelScreenY) {
     ctx.restore();
 }
 
-// --- オーバーレイ（色付き）描画 ---
 async function drawColorOverlay() {
+    const nativeMax = NATIVE_MAX;
     const tileSize = TILE_SIZE;
-    const p0 = map.latLngToContainerPoint(map.unproject([0, 0], NATIVE_MAX));
-    const p1x = map.latLngToContainerPoint(map.unproject([1, 0], NATIVE_MAX));
-    const p1y = map.latLngToContainerPoint(map.unproject([0, 1], NATIVE_MAX));
+    const p0 = map.latLngToContainerPoint(map.unproject([0, 0], nativeMax));
+    const p1x = map.latLngToContainerPoint(map.unproject([1, 0], nativeMax));
+    const p1y = map.latLngToContainerPoint(map.unproject([0, 1], nativeMax));
     const pixelScreenX = Math.abs(p1x.x - p0.x);
     const pixelScreenY = Math.abs(p1y.y - p0.y);
     const pixelScreen = Math.max(pixelScreenX, pixelScreenY);
 
-    // 表示領域の画像ピクセル範囲を求める
     const topLeftLatLng = map.containerPointToLatLng([0, 0]);
     const bottomRightLatLng = map.containerPointToLatLng([map.getSize().x, map.getSize().y]);
-    const topLeftPx = map.project(topLeftLatLng, NATIVE_MAX);
-    const bottomRightPx = map.project(bottomRightLatLng, NATIVE_MAX);
+    const topLeftPx = map.project(topLeftLatLng, nativeMax);
+    const bottomRightPx = map.project(bottomRightLatLng, nativeMax);
     const startX = Math.floor(Math.min(topLeftPx.x, bottomRightPx.x));
     const endX = Math.ceil(Math.max(topLeftPx.x, bottomRightPx.x));
     const startY = Math.floor(Math.min(topLeftPx.y, bottomRightPx.y));
@@ -367,7 +489,6 @@ async function drawColorOverlay() {
     const vw = map.getSize().x;
     const vh = map.getSize().y;
 
-    // 低ズーム（1画像ピクセル < 1 screen px）の場合はスクリーンピクセル毎に最近傍色を割り当てる方式へ切替
     if (pixelScreen < 1) {
         const MAX_PIXELS_WORK = 200000;
         let stepScreen = 1;
@@ -382,7 +503,7 @@ async function drawColorOverlay() {
         const imageData = offCtx.createImageData(vw, vh);
         const data = imageData.data;
 
-        const contStart = map.latLngToContainerPoint(map.unproject([startX, startY], NATIVE_MAX));
+        const contStart = map.latLngToContainerPoint(map.unproject([startX, startY], nativeMax));
 
         for (let cy = 0; cy < vh; cy += stepScreen) {
             const imageYf = startY + (cy - contStart.y) / (pixelScreenY || 1);
@@ -398,12 +519,12 @@ async function drawColorOverlay() {
                 const ty = Math.floor(imageSy / tileSize);
                 const inTx = imageSx - tx * tileSize;
                 const inTy = imageSy - ty * tileSize;
-                const key = `${NATIVE_MAX}/${tx}/${ty}`;
+                const key = `${currentTimestampFull || (ctrl.dateSelect?.value || '').replace(/-/g,'')}/${nativeMax}/${tx}/${ty}`;
 
                 try {
                     let tilePixels = tilePixelCache.get(key);
                     if (!tilePixels) {
-                        const bitmap = await fetchTileBitmap(NATIVE_MAX, tx, ty);
+                        const bitmap = await fetchTileBitmap(nativeMax, tx, ty);
                         const tmp = document.createElement('canvas');
                         tmp.width = bitmap.width;
                         tmp.height = bitmap.height;
@@ -441,14 +562,13 @@ async function drawColorOverlay() {
 
         offCtx.putImageData(imageData, 0, 0);
         ctx.save();
-        ctx.globalAlpha = parseFloat(ctrl.overlayOpacity.value);
+        ctx.globalAlpha = parseFloat(ctrl.overlayOpacity?.value || 1);
         ctx.drawImage(off, 0, 0, vw, vh);
         ctx.restore();
         return;
     }
 
-    // 高ズームモード
-    let userStep = Math.max(1, parseInt(ctrl.sampleStep.value, 10));
+    let userStep = Math.max(1, parseInt(ctrl.sampleStep?.value || '1', 10));
     let autoStep = userStep;
     if (pixelScreen > 0 && pixelScreen < 1) {
         autoStep = Math.max(autoStep, Math.ceil(1 / pixelScreen));
@@ -478,15 +598,15 @@ async function drawColorOverlay() {
     const dY = Math.max(1, Math.round(pixelScreenY * step));
 
     ctx.save();
-    ctx.globalAlpha = parseFloat(ctrl.overlayOpacity.value);
+    ctx.globalAlpha = parseFloat(ctrl.overlayOpacity?.value || 1);
 
     for (let tx = startTileX; tx <= endTileX; tx++) {
         for (let ty = startTileY; ty <= endTileY; ty++) {
-            const key = `${NATIVE_MAX}/${tx}/${ty}`;
+            const key = `${currentTimestampFull || (ctrl.dateSelect?.value || '').replace(/-/g,'')}/${nativeMax}/${tx}/${ty}`;
             try {
                 let tilePixels = tilePixelCache.get(key);
                 if (!tilePixels) {
-                    const bitmap = await fetchTileBitmap(NATIVE_MAX, tx, ty);
+                    const bitmap = await fetchTileBitmap(nativeMax, tx, ty);
                     const offc = document.createElement('canvas');
                     offc.width = bitmap.width;
                     offc.height = bitmap.height;
@@ -520,7 +640,7 @@ async function drawColorOverlay() {
 
                         const imagePxX = tx * tileSize + sx;
                         const imagePxY = ty * tileSize + sy;
-                        const cont = map.latLngToContainerPoint(map.unproject([imagePxX, imagePxY], NATIVE_MAX));
+                        const cont = map.latLngToContainerPoint(map.unproject([imagePxX, imagePxY], nativeMax));
                         const rx = (cont.x + 0.5) | 0;
                         const ry = (cont.y + 0.5) | 0;
                         if (rx + dX < 0 || rx > map.getSize().x || ry + dY < 0 || ry > map.getSize().y) continue;
@@ -540,9 +660,10 @@ async function drawColorOverlay() {
 
 // タイルを取得して ImageBitmap を返す（キャッシュあり）
 async function fetchTileBitmap(z, x, y) {
-    const key = `${z}/${x}/${y}`;
+    const stampKey = currentTimestampFull || (ctrl.dateSelect?.value || '').replace(/-/g,'') || 'nodate';
+    const key = `${stampKey}/${z}/${x}/${y}`;
     if (tileCache.has(key)) return tileCache.get(key);
-    const url = buildTileUrl(z, x, y);
+    const url = buildTileUrlForStamp(stampKey, z, x, y);
     const resp = await fetch(url, { mode: 'cors' });
     if (!resp.ok) throw new Error(`Tile fetch failed: ${resp.status} ${resp.statusText}`);
     const blob = await resp.blob();
@@ -566,7 +687,7 @@ async function readPixelFromTileBitmap(bitmap, x, y) {
 // ピクセル選択（クリック時）
 let lastPicked = null;
 async function onMapClick(e) {
-    if (!ctrl.pixelPickerToggle.checked) return;
+    if (!ctrl.pixelPickerToggle?.checked) return;
 
     const tileSize = TILE_SIZE;
 
@@ -579,9 +700,9 @@ async function onMapClick(e) {
     const inTileX = px - tileX * tileSize;
     const inTileY = py - tileY * tileSize;
 
-    ctrl.pixelText.textContent = `pixel: ${px}, ${py}\nタイル: z=${NATIVE_MAX}, x=${tileX}, y=${tileY}\n読み込み中...`;
-    ctrl.pixelOutput.style.display = 'flex';
-    ctrl.colorSwatch.style.background = '#ffffff';
+    if (ctrl.pixelText) ctrl.pixelText.textContent = `pixel: ${px}, ${py}\nタイル: z=${NATIVE_MAX}, x=${tileX}, y=${tileY}\n読み込み中...`;
+    if (ctrl.pixelOutput) ctrl.pixelOutput.style.display = 'flex';
+    if (ctrl.colorSwatch) ctrl.colorSwatch.style.background = '#ffffff';
 
     try {
         const bitmap = await fetchTileBitmap(NATIVE_MAX, tileX, tileY);
@@ -589,15 +710,15 @@ async function onMapClick(e) {
         if (!pxData) throw new Error('タイル内座標が範囲外です');
         const { r, g, b, a } = pxData;
         const hex = '#' + [r, g, b].map(v => v.toString(16).padStart(2, '0')).join('').toUpperCase();
-        ctrl.colorSwatch.style.background = hex;
-        ctrl.pixelText.textContent = `pixel: ${px}, ${py}\nタイル: z=${NATIVE_MAX}, x=${tileX}, y=${tileY}\nRGBA: ${r}, ${g}, ${b}, ${a}\nHEX: ${hex}`;
+        if (ctrl.colorSwatch) ctrl.colorSwatch.style.background = hex;
+        if (ctrl.pixelText) ctrl.pixelText.textContent = `pixel: ${px}, ${py}\nタイル: z=${NATIVE_MAX}, x=${tileX}, y=${tileY}\nRGBA: ${r}, ${g}, ${b}, ${a}\nHEX: ${hex}`;
         lastPicked = { px, py, r, g, b, a, hex };
 
         showPixelMarker(px, py);
     } catch (err) {
         console.error(err);
-        ctrl.pixelText.textContent = `pixel: ${px}, ${py}\nエラー: ${err.message}\nCORS を確認してください`;
-        ctrl.colorSwatch.style.background = '#ffffff';
+        if (ctrl.pixelText) ctrl.pixelText.textContent = `pixel: ${px}, ${py}\nエラー: ${err.message}\nCORS を確認してください`;
+        if (ctrl.colorSwatch) ctrl.colorSwatch.style.background = '#ffffff';
         lastPicked = null;
         pixelMarker.style.display = 'none';
     }
@@ -618,12 +739,12 @@ function showPixelMarker(imagePxX, imagePxY) {
     pixelMarker.style.height = h + 'px';
     pixelMarker.style.display = 'block';
     setTimeout(() => {
-        if (!ctrl.pixelPickerToggle.checked) pixelMarker.style.display = 'none';
+        if (!ctrl.pixelPickerToggle?.checked) pixelMarker.style.display = 'none';
     }, 2000);
 }
 
 // 色をクリップボードにコピー
-ctrl.copyColor.addEventListener('click', () => {
+ctrl.copyColor?.addEventListener('click', () => {
     if (!lastPicked) return;
     const text = lastPicked.hex;
     navigator.clipboard?.writeText(text).then(() => {
@@ -635,17 +756,17 @@ ctrl.copyColor.addEventListener('click', () => {
 });
 
 // キャッシュクリア
-ctrl.clearCache.addEventListener('click', () => {
+ctrl.clearCache?.addEventListener('click', () => {
     tileCache.clear();
     tilePixelCache.clear();
     if (ctrl.pixelText) ctrl.pixelText.textContent = 'キャッシュをクリアしました';
 });
 
 // トグル変更時は再描画
-ctrl.pixelGridToggle.addEventListener('change', () => { drawPixelGrid(); });
-ctrl.colorizeToggle.addEventListener('change', () => { drawPixelGrid(); });
-ctrl.pixelPickerToggle.addEventListener('change', () => {
-    if (!ctrl.pixelPickerToggle.checked) {
+ctrl.pixelGridToggle?.addEventListener('change', () => { drawPixelGrid(); });
+ctrl.colorizeToggle?.addEventListener('change', () => { drawPixelGrid(); });
+ctrl.pixelPickerToggle?.addEventListener('change', () => {
+    if (!ctrl.pixelPickerToggle?.checked) {
         if (ctrl.pixelOutput) ctrl.pixelOutput.style.display = 'none';
         lastPicked = null;
         pixelMarker.style.display = 'none';
@@ -653,44 +774,94 @@ ctrl.pixelPickerToggle.addEventListener('change', () => {
 });
 
 // Apply / Fit ボタン
-ctrl.applyBtn.addEventListener('click', () => {
+ctrl.applyBtn?.addEventListener('click', () => {
     try { applySettings(); } catch (err) { alert('設定適用エラー: ' + err.message); }
 });
-ctrl.fitBtn.addEventListener('click', () => {
+ctrl.fitBtn?.addEventListener('click', () => {
     const southWest = map.unproject([0, IMG_H], NATIVE_MAX);
     const northEast = map.unproject([IMG_W, 0], NATIVE_MAX);
     const bounds = new L.LatLngBounds(southWest, northEast);
     map.fitBounds(bounds, { maxZoom: DISPLAY_MAX });
 });
 
-// 日付操作
+// 日付操作 helpers
 function formatDateYYYYMMDD(d) {
     const y = d.getFullYear();
     const m = String(d.getMonth() + 1).padStart(2, '0');
     const day = String(d.getDate()).padStart(2, '0');
     return `${y}-${m}-${day}`;
 }
-ctrl.prevDate.addEventListener('click', async () => {
-    const cur = ctrl.dateInput.value ? new Date(ctrl.dateInput.value) : new Date();
+
+// prev/next handlers preserve view and update timestamp for that date
+ctrl.prevDate?.addEventListener('click', async () => {
+    const cur = ctrl.dateSelect?.value ? new Date(ctrl.dateSelect.value) : new Date();
     cur.setDate(cur.getDate() - 1);
-    ctrl.dateInput.value = formatDateYYYYMMDD(cur);
-    await updateCurrentTimestampForDate(ctrl.dateInput.value);
-    applySettings();
+    const iso = formatDateYYYYMMDD(cur);
+    if (uniqueDates.includes(iso)) {
+        if (ctrl.dateSelect) ctrl.dateSelect.value = iso;
+        await updateCurrentTimestampForDate(iso, { preserveView: true });
+    }
 });
-ctrl.nextDate.addEventListener('click', async () => {
-    const cur = ctrl.dateInput.value ? new Date(ctrl.dateInput.value) : new Date();
+ctrl.nextDate?.addEventListener('click', async () => {
+    const cur = ctrl.dateSelect?.value ? new Date(ctrl.dateSelect.value) : new Date();
     cur.setDate(cur.getDate() + 1);
-    ctrl.dateInput.value = formatDateYYYYMMDD(cur);
-    await updateCurrentTimestampForDate(ctrl.dateInput.value);
-    applySettings();
+    const iso = formatDateYYYYMMDD(cur);
+    if (uniqueDates.includes(iso)) {
+        if (ctrl.dateSelect) ctrl.dateSelect.value = iso;
+        await updateCurrentTimestampForDate(iso, { preserveView: true });
+    }
 });
-ctrl.dateInput.addEventListener('change', async () => {
-    await updateCurrentTimestampForDate(ctrl.dateInput.value);
-    applySettings();
+ctrl.dateSelect?.addEventListener('change', async () => {
+    await updateCurrentTimestampForDate(ctrl.dateSelect.value, { preserveView: true });
 });
 
+// updateCurrentTimestampForDate: set currentTimestampFull to latest for that date,
+// update UI and use switchToTimestamp() to swap layers smoothly
+async function updateCurrentTimestampForDate(dateISO, opts = {}) {
+  const preserveView = opts.preserveView || false;
+
+  if (!dateISO) {
+    currentTimestampFull = null;
+    if (ctrl.timeLabel) ctrl.timeLabel.textContent = '--:--';
+    // redraw overlays/canvas
+    drawPixelGrid();
+    return;
+  }
+  const compact = dateISO.replace(/-/g, '');
+  const times = timestampsByDate.get(compact);
+  if (times && times.length > 0) {
+    const hhmm = times[0]; // latest
+    currentTimestampFull = `${compact}${hhmm}`;
+    if (ctrl.timeLabel) ctrl.timeLabel.textContent = `${hhmm.slice(0,2)}:${hhmm.slice(2)}`;
+    const idx = findTimestampIndex(currentTimestampFull);
+    if (idx >= 0 && ctrl.dateSlider) {
+      ctrl.dateSlider.value = idx;
+      if (ctrl.dateSliderInfo) ctrl.dateSliderInfo.textContent = `${idx + 1} / ${timestampLines.length}`;
+    }
+    // 切替実行
+    switchToTimestamp(currentTimestampFull);
+  } else {
+    currentTimestampFull = null;
+    if (ctrl.timeLabel) ctrl.timeLabel.textContent = '--:--';
+    switchToTimestamp(null);
+  }
+}
+
+// slider input handling (debounced)
+if (ctrl.dateSlider) {
+  ctrl.dateSlider.addEventListener('input', (ev) => {
+    const idx = parseInt(ev.target.value, 10);
+    if (ctrl.dateSliderInfo) ctrl.dateSliderInfo.textContent = `${idx + 1} / ${timestampLines.length}`;
+    if (sliderUpdateTimer) clearTimeout(sliderUpdateTimer);
+    sliderUpdateTimer = setTimeout(() => {
+      setTimestampByIndex(idx, { preserveView: true });
+      sliderUpdateTimer = null;
+    }, 120);
+  });
+}
+
 // Settings パネルの開閉（toggle）
-ctrl.settingsBtn.addEventListener('click', () => {
+ctrl.settingsBtn?.addEventListener('click', () => {
     const panel = ctrl.controlPanel;
     if (!panel) return;
     const isHidden = panel.classList.contains('hidden');
@@ -701,39 +872,40 @@ ctrl.settingsBtn.addEventListener('click', () => {
 // 初期化: 日付を今日にセット & タイムスタンプ読み込み
 (async function initControls() {
     const today = new Date();
-    ctrl.dateInput.value = formatDateYYYYMMDD(today);
+    const todayISO = formatDateYYYYMMDD(today);
 
-    // fetch timestamp list
     await fetchTimestampList();
 
-    // If timestamp file has entries, show the very first line (ファイル一番上) on initial open.
     if (timestampLines.length > 0) {
       currentTimestampFull = timestampLines[0]; // top of file (YYYYMMDDhhmm)
-      // update displayed date and time label accordingly
       const datePart = currentTimestampFull.slice(0,8);
       const timePart = currentTimestampFull.slice(8);
-      // set date input to the date portion so date UI matches the timestamp
-      ctrl.dateInput.value = `${datePart.slice(0,4)}-${datePart.slice(4,6)}-${datePart.slice(6,8)}`;
-      ctrl.timeLabel.textContent = `${timePart.slice(0,2)}:${timePart.slice(2)}`;
+      const dateISO = `${datePart.slice(0,4)}-${datePart.slice(4,6)}-${datePart.slice(6,8)}`;
+      if (ctrl.dateSelect) {
+        if (uniqueDates.includes(dateISO)) ctrl.dateSelect.value = dateISO;
+      }
+      if (ctrl.timeLabel) ctrl.timeLabel.textContent = `${timePart.slice(0,2)}:${timePart.slice(2)}`;
+      const idx = findTimestampIndex(currentTimestampFull);
+      if (idx >= 0 && ctrl.dateSlider) {
+        ctrl.dateSlider.value = idx;
+        if (ctrl.dateSliderInfo) ctrl.dateSliderInfo.textContent = `${idx + 1} / ${timestampLines.length}`;
+      }
     } else {
-      // no timestamp file or empty -> fall back to per-day behavior for today's date
-      await updateCurrentTimestampForDate(ctrl.dateInput.value);
+      await updateCurrentTimestampForDate(ctrl.dateSelect?.value);
     }
 
-    // init map & settings after we've decided on timestamp
     initMap();
-    applySettings();
+    // 初回は activeTileLayer を currentTimestampFull へ切替
+    switchToTimestamp(currentTimestampFull);
 })();
 
 // キーボードショートカット
 window.addEventListener('keydown', (ev) => {
+    if (!map) return;
     if (ev.key === '+' || ev.key === '=') map.zoomIn();
     if (ev.key === '-') map.zoomOut();
-    if (ev.key === 'r') ctrl.fitBtn.click();
+    if (ev.key === 'r') ctrl.fitBtn?.click();
 });
 
 // 初回キャンバスサイズ合わせ
-resizeCanvasToMap();
-
-// マウス移動で座標表示
-map && map.on && map.on('mousemove', (e) => { showCoords(e); });
+setTimeout(resizeCanvasToMap, 50);

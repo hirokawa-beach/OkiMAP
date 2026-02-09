@@ -3,33 +3,51 @@
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width,initial-scale=1" />
-  <title>OkiMAP(leafletテスト版)</title>
+  <title>OkiMAP(Wplace沖ノ鳥島アーカイブ)</title>
   <!-- Leaflet の CSS -->
-  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+  <link rel="preconnect" href="https://unpkg.com" crossorigin>
+  <link rel="preconnect" href="https://hb-raspi1.wplaceoki.com" crossorigin>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link rel="preload" as="style" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" crossorigin>
+  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" crossorigin>
+  <link rel="preload" as="style" href="style.css">
   <link rel="stylesheet" href="style.css">
+  <link href="https://fonts.googleapis.com/css2?family=Manrope:wght@400;500;600;700&family=Space+Grotesk:wght@500;600;700&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="style.css">
+  <link rel="canonical" href="https://okimap.wplaceoki.com/" />
+  <meta property="og:image" content="https://okimap.wplaceoki.com/ogp.png" />
+  <meta property="og:image:width" content="1200" />
+  <meta property="og:image:height" content="630" />
+  <meta property="og:title" content="OkiMAP(Wplace沖ノ鳥島アーカイブ)" />
+  <meta property="og:description" content="Wplaceの沖ノ鳥近海のタイムスタンプ付きタイルを表示し、ピクセル選択やオーバーレイでアーカイブを楽に閲覧できます。" />
+  <meta property="og:url" content="https://okimap.wplaceoki.com/" />
+  <meta property="og:type" content="website" />
+  <meta name="twitter:card" content="summary_large_image" />
 </head>
 <body>
   <div id="map"></div>
 
   <!-- 設定ボタン -->
   <button id="settingsBtn" class="small-btn" aria-haspopup="dialog" aria-expanded="false" title="設定">⚙️</button>
+  <!-- インフォメーション / 更新情報ボタン -->
+  <button id="infoBtn" class="small-btn" aria-haspopup="dialog" aria-expanded="false" title="インフォメーション">ℹ️</button>
+  <button id="updatesBtn" class="small-btn" aria-haspopup="dialog" aria-expanded="false" title="更新情報">📝</button>
 
   <div class="panel hidden" id="controlPanel" role="dialog" aria-modal="true" aria-label="表示設定">
     <div style="display:flex; justify-content:space-between; align-items:center;">
       <strong>表示設定</strong>
-      <span class="hint" style="font-size:12px; color:#666;">閉じるには右上の⚙️をもう一度押してください</span>
+      <span class="hint" style="font-size:12px; color:#666;">閉じるには⚙️をもう一度押してください</span>
     </div>
 
     <div style="margin-top:8px; display:flex; gap:8px; align-items:center; flex-wrap:wrap;">
-      <div class="pill">タイルサイズ: 256px</div>
       <div class="pill">ネイティブ max: 7</div>
       <div class="pill">表示上 maxZoom: 12</div>
-      <div class="pill">表示法: 滑らか</div>
     </div>
 
     <div class="row" style="margin-top:12px;">
       <label style="flex:0.5">
-        zoomSnap
+        ズーム率きざみ
         <select id="zoomSnap">
           <option value="1">1</option>
           <option value="0.5">0.5</option>
@@ -37,18 +55,17 @@
           <option value="0.1">0.1</option>
         </select>
       </label>
-
-      <label style="flex:1; display:flex; gap:8px; align-items:center;">
-        <input type="checkbox" id="pixelPickerToggle" /> ピクセル選択モード
-      </label>
     </div>
 
+    <label style="margin-top:8px; display:flex; gap:8px; align-items:center;">
+      <input type="checkbox" id="pixelPickerToggle" /> ピクセル選択モード
+    </label>
     <label style="margin-top:8px; display:flex; gap:8px; align-items:center;">
       <input type="checkbox" id="pixelGridToggle" /> ピクセルグリッドを表示（zoom ≥ 8 のとき）
     </label>
 
     <label style="margin-top:6px; display:flex; gap:8px; align-items:center;">
-      <input type="checkbox" id="colorizeToggle" /> ピクセル色でオーバーレイ（zoom ≥ 8 のとき）
+      <input type="checkbox" id="colorizeToggle" checked /> ピクセル色でオーバーレイ（zoom ≥ 8 のとき）
     </label>
 
     <div class="row" style="margin-top:8px;">
@@ -67,21 +84,84 @@
     </div>
 
     <div class="hint" style="margin-top:12px;">
-      - オーバーレイ／グリッドはデフォルト zoom ≥ 8 のとき描画します。閾値はコード内の MIN_ZOOM_TO_SHOW を編集してください。<br>
+      - オーバーレイ／グリッドはデフォルト zoom ≥ 8 のとき描画します。<br>
+    </div>
+  </div>
+
+  <div class="panel hidden" id="infoPanel" role="dialog" aria-modal="true" aria-label="インフォメーション">
+    <div style="display:flex; justify-content:space-between; align-items:center;">
+      <strong>インフォメーション</strong>
+      <span class="hint" style="font-size:12px; color:#666;">閉じるにはℹ️をもう一度押してください</span>
+    </div>
+    <div class="info-section">
+      <h4>OkiMAP について</h4>
+      <p>OkiMAP は、<a href="https://wplace.live/" target="_blank">wplace.live</a>における沖ノ鳥島周辺の遷移を一日単位に閲覧できるアーカイブマップです。</p>
+    </div>
+    <div class="info-section">
+      <h4>操作方法</h4>
+      <p class="hint" style="margin:6px 0 4px;">PC</p>
+      <ul>
+        <li>左ドラッグ：地図を移動</li>
+        <li>ホイール / + -：ズーム</li>
+        <li>r：全体表示（フィット）</li>
+        <li>ピクセル選択モードON：クリックで色を取得</li>
+      </ul>
+      <p class="hint" style="margin:8px 0 4px;">スマホ</p>
+      <ul>
+        <li>1本指ドラッグ：地図を移動</li>
+        <li>2本指ピンチ：ズーム</li>
+        <li>ピクセル選択モードON：タップで色を取得</li>
+      </ul>
+    </div>
+    <div class="info-section">
+      <h4>協力者の方々(敬称略)</h4>
+      <div class="credits">
+        <div class="credit-card">
+          <img class="credit-icon" src="img/ultimate_icon.png" alt="ultimate_1113">
+          <div class="credit-body">
+            <div class="credit-name">ultimate_1113</div>
+            <div class="credit-title">wplace沖ノ鳥島開発鯖 都市開発局長</div>
+            <div class="credit-role">js等のチェック・アドバイスをはじめ、大変お世話になりました。</div>
+          </div>
+        </div>
+        <!-- <div class="credit-card">
+          <img class="credit-icon" src="assets/credit-placeholder.png" alt="協力者">
+          <div class="credit-body">
+            <div class="credit-name">（名前）</div>
+            <div class="credit-title">（肩書き）</div>
+            <div class="credit-role">（役割）</div>
+          </div>
+        </div> -->
+      </div>
+    </div>
+  </div>
+
+  <div class="panel hidden" id="updatesPanel" role="dialog" aria-modal="true" aria-label="更新情報">
+    <div style="display:flex; justify-content:space-between; align-items:center;">
+      <strong>更新情報</strong>
+      <span class="hint" style="font-size:12px; color:#666;">閉じるには📝をもう一度押してください</span>
+    </div>
+    <div class="info-section">
+      <div class="update-entry">
+        <div class="update-version">v1.0.0 (2025/02/**)</div>
+        <ul class="update-list">
+          <li>OkiMAPリリース</li>
+        </ul>
+      </div>
     </div>
   </div>
 
   <!-- 画面中央下：日付バー（上に日付選択コンソールを置き、その直下にスライダー） -->
   <div id="dateBar" aria-label="日付選択バー">
     <button id="prevDate" class="date-btn" title="前日">◀</button>
-    <!-- 日付は timestamps.txt にある日付のみ選べるセレクトに変更 -->
-    <select id="dateSelect" aria-label="日付を選択"></select>
+    <!-- カレンダーから日付を選択 -->
+    <input id="dateSelect" type="date" aria-label="日付を選択">
     <span id="timeLabel" class="time-label">--:--</span>
     <button id="nextDate" class="date-btn" title="翌日">▶</button>
   </div>
 
   <!-- スライダー (日付/時刻をスムーズに切替) 下に配置 -->
-  <div id="dateSliderBar" aria-hidden="true">
+  <div id="dateSliderBar">
     <input type="range" id="dateSlider" min="0" max="0" step="1" value="0" />
     <div id="dateSliderInfo" class="hint">0 / 0</div>
   </div>
@@ -95,14 +175,14 @@
   </div>
 
   <div class="zoom-info" id="zoomInfo">zoom: --</div>
-  <div class="coords" id="coordsInfo">pixel: -- , --</div>
+  <div class="coords" id="coordsInfo">pixel: -- , --, --, --</div>
 
   <!-- オーバーレイ用キャンバス -->
   <canvas id="pixelGridCanvas"></canvas>
   <div id="pixelMarker" class="pixel-marker" style="display:none"></div>
 
   <!-- Leaflet JS -->
-  <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
-  <script src="map.js"></script>
+  <script defer src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js" crossorigin></script>
+  <script defer src="map.min.js"></script>
 </body>
 </html>

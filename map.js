@@ -2,28 +2,39 @@
 // --- 設定 ---
 const MIN_ZOOM_TO_SHOW = 8; // グリッド／オーバーレイを描画する最小ズーム
 
-// 固定値（要望により固定）
+// 固定値
 const TILE_SIZE = 256;
 const NATIVE_MAX = 7;
 const DISPLAY_MAX = 12;
 const RENDER_MODE = 'smooth'; // 固定
 
-// 内部固定の元画像サイズ（UI からは隠す）
+// 内部固定の元画像サイズ
 const IMG_W = 9000;
 const IMG_H = 9000;
 
-// --- タ��ムスタンプリスト設定 ---
+// --- タイムスタンプリスト設定 ---
 const TIMESTAMPS_URL = 'https://hb-raspi1.wplaceoki.com/okimap/timestamps.txt';
 
 // --- 状態とキャッシュ ---
 let map;
 let activeTileLayer = null; // 現在表示中の tile layer（ダブルバッファ用）
 let loadingSwitch = null;   // 進行中の切替操作の参照（中断用）
+let tileFetchController = null; // fetch() 中断用（タイル取得）
+let tileFetchQueue = [];
+let tileFetchInFlight = 0;
+const MAX_TILE_FETCH_INFLIGHT = 6;
 const tileCache = new Map(); // キャッシュ: "timestamp/z/x/y" -> ImageBitmap
 const tilePixelCache = new Map(); // キャッシュ: "timestamp/z/x/y" -> {w,h,data}
+const MAX_TILE_CACHE = 800; // 画像タイルキャッシュ上限
+const MAX_TILE_PIXEL_CACHE = 120; // ピクセルキャッシュ上限（重いので小さめ）
 const MAX_SAMPLES = 500000; // 最大サンプル数（自動間引きの閾値）
 let isInteracting = false;
 let redrawTimer = null;
+
+// 表示用タイル座標系（pixel: 0,0 を 1791,901,0,0 に対応）
+const DISPLAY_TILE_BASE_X = 1791;
+const DISPLAY_TILE_BASE_Y = 901;
+const DISPLAY_TILE_SIZE = 1000;
 
 // タイムスタンプデータ構造
 const timestampsByDate = new Map();
@@ -52,7 +63,11 @@ const ctrl = {
     zoomInfo: document.getElementById('zoomInfo'),
     coordsInfo: document.getElementById('coordsInfo'),
     settingsBtn: document.getElementById('settingsBtn'),
+    infoBtn: document.getElementById('infoBtn'),
+    updatesBtn: document.getElementById('updatesBtn'),
     controlPanel: document.getElementById('controlPanel'),
+    infoPanel: document.getElementById('infoPanel'),
+    updatesPanel: document.getElementById('updatesPanel'),
     gridMinScreen: document.getElementById('gridMinScreen'),
     timeLabel: document.getElementById('timeLabel'),
     dateSlider: document.getElementById('dateSlider'),
@@ -64,7 +79,7 @@ const canvas = document.getElementById('pixelGridCanvas');
 const ctx = canvas.getContext('2d');
 const pixelMarker = document.getElementById('pixelMarker');
 
-// ベース URL - 日付/時刻フォルダを使う
+// ベース URL
 const BASE_TILE_HOST = 'https://hb-raspi1.wplaceoki.com/okimap/img';
 
 // タイル URL 組み立て（explicitStamp が渡ればそれを使う）
@@ -73,10 +88,66 @@ function buildTileUrlForStamp(stamp, z, x, y) {
   return `${BASE_TILE_HOST}/${stampPart}/${z}/${x}/${y}.png?native=${z}`;
 }
 
+// LRU 風の簡易キャッシュ制御
+function setCacheWithLimit(mapObj, key, value, limit) {
+  if (mapObj.has(key)) mapObj.delete(key);
+  mapObj.set(key, value);
+  if (mapObj.size > limit) {
+    const oldestKey = mapObj.keys().next().value;
+    if (oldestKey !== undefined) mapObj.delete(oldestKey);
+  }
+}
+
+function toDisplayTileCoords(px, py) {
+  const tileX = DISPLAY_TILE_BASE_X + Math.floor(px / DISPLAY_TILE_SIZE);
+  const tileY = DISPLAY_TILE_BASE_Y + Math.floor(py / DISPLAY_TILE_SIZE);
+  const inX = ((px % DISPLAY_TILE_SIZE) + DISPLAY_TILE_SIZE) % DISPLAY_TILE_SIZE;
+  const inY = ((py % DISPLAY_TILE_SIZE) + DISPLAY_TILE_SIZE) % DISPLAY_TILE_SIZE;
+  return { tileX, tileY, inX, inY };
+}
+
+function isAbortError(err) {
+  return !!err && (err.name === 'AbortError' || err.code === 20);
+}
+
+function resetTileFetchQueue() {
+  for (const job of tileFetchQueue) {
+    try { job.reject(new DOMException('Aborted', 'AbortError')); } catch (e) {}
+  }
+  tileFetchQueue = [];
+  tileFetchInFlight = 0;
+}
+
+function pumpTileFetchQueue() {
+  while (tileFetchInFlight < MAX_TILE_FETCH_INFLIGHT && tileFetchQueue.length > 0) {
+    const job = tileFetchQueue.shift();
+    if (!job) continue;
+    const { fn, resolve, reject, signal } = job;
+    if (signal && signal.aborted) {
+      reject(new DOMException('Aborted', 'AbortError'));
+      continue;
+    }
+    tileFetchInFlight++;
+    fn()
+      .then(resolve, reject)
+      .finally(() => {
+        tileFetchInFlight--;
+        pumpTileFetchQueue();
+      });
+  }
+}
+
+function enqueueTileFetch(fn, signal) {
+  return new Promise((resolve, reject) => {
+    tileFetchQueue.push({ fn, resolve, reject, signal });
+    pumpTileFetchQueue();
+  });
+}
+
 // --- タイムスタンプリスト取得 ---
 async function fetchTimestampList() {
   try {
-    const resp = await fetch(TIMESTAMPS_URL, { cache: 'no-cache' });
+    const resp = await fetch(TIMESTAMPS_URL);
     if (!resp.ok) {
       console.warn('timestamps.txt fetch failed:', resp.status);
       return;
@@ -115,12 +186,18 @@ function parseTimestampList(text) {
 function populateDateSelect() {
   const sel = ctrl.dateSelect;
   if (!sel) return;
-  sel.innerHTML = '';
-  for (const d of uniqueDates) {
-    const opt = document.createElement('option');
-    opt.value = d;
-    opt.textContent = d;
-    sel.appendChild(opt);
+  if (uniqueDates.length === 0) {
+    sel.value = '';
+    sel.min = '';
+    sel.max = '';
+    return;
+  }
+  const newest = uniqueDates[0];
+  const oldest = uniqueDates[uniqueDates.length - 1];
+  sel.min = oldest;
+  sel.max = newest;
+  if (!sel.value || sel.value < sel.min || sel.value > sel.max) {
+    sel.value = newest;
   }
 }
 
@@ -200,6 +277,12 @@ function switchToTimestamp(newStamp) {
     try { loadingSwitch.abort(); } catch (e) {}
     loadingSwitch = null;
   }
+  // タイル取得の fetch() を確実に中断
+  if (tileFetchController) {
+    try { tileFetchController.abort(); } catch (e) {}
+  }
+  resetTileFetchQueue();
+  tileFetchController = new AbortController();
 
   const stampKey = newStamp || (ctrl.dateSelect?.value || '').replace(/-/g,'') || null;
 
@@ -212,7 +295,15 @@ function switchToTimestamp(newStamp) {
 
   // prepare a handle to possibly abort later
   let aborted = false;
-  loadingSwitch = { abort: () => { aborted = true; } };
+  loadingSwitch = {
+    abort: () => {
+      aborted = true;
+      if (tileFetchController) {
+        try { tileFetchController.abort(); } catch (e) {}
+      }
+      resetTileFetchQueue();
+    }
+  };
 
   // when all visible tiles are loaded for this layer
   const onLoadHandler = () => {
@@ -274,7 +365,8 @@ function initMap() {
         maxZoom: DISPLAY_MAX,
         zoomSnap: parseFloat(ctrl.zoomSnap?.value || 1),
         zoomDelta: 1,
-        inertia: false
+        inertia: false,
+        fadeAnimation: false
     });
 
     // まずはダミーの activeTileLayer を作っておく（空のstampで）
@@ -292,10 +384,15 @@ function initMap() {
     window.addEventListener('resize', resizeCanvasToMap);
     resizeCanvasToMap();
 
-    // fit bounds once tileset known size
+    // 画像範囲の境界を定義（外側へパンできないようにする）
     const southWest = map.unproject([0, IMG_H], NATIVE_MAX);
     const northEast = map.unproject([IMG_W, 0], NATIVE_MAX);
     const bounds = new L.LatLngBounds(southWest, northEast);
+    const paddedBounds = bounds.pad(0.08);
+    map.setMaxBounds(paddedBounds);
+    map.options.maxBoundsViscosity = 1.0;
+
+    // fit bounds once tileset known size
     map.fitBounds(bounds, { maxZoom: DISPLAY_MAX });
 
     updateZoomInfo();
@@ -336,7 +433,10 @@ function updateZoomInfo() {
 function showCoords(e) {
     if (!map) return;
     const p = map.project(e.latlng, NATIVE_MAX);
-    if (ctrl.coordsInfo) ctrl.coordsInfo.textContent = `pixel: ${Math.round(p.x)} , ${Math.round(p.y)}`;
+    const px = Math.round(p.x);
+    const py = Math.round(p.y);
+    const d = toDisplayTileCoords(px, py);
+    if (ctrl.coordsInfo) ctrl.coordsInfo.textContent = `pixel: ${d.tileX}, ${d.tileY}, ${d.inX}, ${d.inY}`;
 }
 
 // キャンバスサイズをマップに合わせる
@@ -401,8 +501,7 @@ async function drawPixelGrid() {
     }
 }
 
-// 以降は既存の drawGridLines / drawColorOverlay / fetchTileBitmap / readPixelFromTileBitmap / onMapClick / showPixelMarker
-// （ここではコードを省略せずに同じロジックを続けます — 前バージョンからの変更点は fetchTileBitmap のキーに stamp を含めるところです）
+
 
 function drawGridLines(step, pixelScreenX, pixelScreenY) {
     const nativeMax = NATIVE_MAX;
@@ -463,6 +562,7 @@ function drawGridLines(step, pixelScreenX, pixelScreenY) {
 }
 
 async function drawColorOverlay() {
+    if (tileFetchController && tileFetchController.signal.aborted) return;
     const nativeMax = NATIVE_MAX;
     const tileSize = TILE_SIZE;
     const p0 = map.latLngToContainerPoint(map.unproject([0, 0], nativeMax));
@@ -532,7 +632,7 @@ async function drawColorOverlay() {
                         tctx.drawImage(bitmap, 0, 0);
                         const img = tctx.getImageData(0, 0, tmp.width, tmp.height);
                         tilePixels = { w: tmp.width, h: tmp.height, data: img.data };
-                        tilePixelCache.set(key, tilePixels);
+    setCacheWithLimit(tilePixelCache, key, tilePixels, MAX_TILE_PIXEL_CACHE);
                     }
                     if (inTx < 0 || inTy < 0 || inTx >= tilePixels.w || inTy >= tilePixels.h) continue;
                     const idx = (inTy * tilePixels.w + inTx) * 4;
@@ -555,6 +655,7 @@ async function drawColorOverlay() {
                         }
                     }
                 } catch (err) {
+                    if (isAbortError(err)) return;
                     continue;
                 }
             }
@@ -614,7 +715,7 @@ async function drawColorOverlay() {
                     offCtx.drawImage(bitmap, 0, 0);
                     const imgData = offCtx.getImageData(0, 0, offc.width, offc.height);
                     tilePixels = { w: offc.width, h: offc.height, data: imgData.data };
-                    tilePixelCache.set(key, tilePixels);
+                    setCacheWithLimit(tilePixelCache, key, tilePixels, MAX_TILE_PIXEL_CACHE);
                 }
 
                 const left = Math.max(startX, tx * tileSize);
@@ -650,6 +751,7 @@ async function drawColorOverlay() {
                     }
                 }
             } catch (err) {
+                if (isAbortError(err)) return;
                 continue;
             }
         }
@@ -664,12 +766,16 @@ async function fetchTileBitmap(z, x, y) {
     const key = `${stampKey}/${z}/${x}/${y}`;
     if (tileCache.has(key)) return tileCache.get(key);
     const url = buildTileUrlForStamp(stampKey, z, x, y);
-    const resp = await fetch(url, { mode: 'cors' });
-    if (!resp.ok) throw new Error(`Tile fetch failed: ${resp.status} ${resp.statusText}`);
-    const blob = await resp.blob();
-    const bitmap = await createImageBitmap(blob);
-    tileCache.set(key, bitmap);
-    return bitmap;
+    const signal = tileFetchController ? tileFetchController.signal : undefined;
+    if (signal && signal.aborted) throw new DOMException('Aborted', 'AbortError');
+    return enqueueTileFetch(async () => {
+      const resp = await fetch(url, { mode: 'cors', signal });
+      if (!resp.ok) throw new Error(`Tile fetch failed: ${resp.status} ${resp.statusText}`);
+      const blob = await resp.blob();
+      const bitmap = await createImageBitmap(blob);
+      setCacheWithLimit(tileCache, key, bitmap, MAX_TILE_CACHE);
+      return bitmap;
+    }, signal);
 }
 
 // ビットマップから単一ピクセルの色を読む
@@ -684,7 +790,7 @@ async function readPixelFromTileBitmap(bitmap, x, y) {
     return { r: d[0], g: d[1], b: d[2], a: d[3] };
 }
 
-// ピクセル選択（クリック時）
+// ピクセル選択
 let lastPicked = null;
 async function onMapClick(e) {
     if (!ctrl.pixelPickerToggle?.checked) return;
@@ -700,7 +806,8 @@ async function onMapClick(e) {
     const inTileX = px - tileX * tileSize;
     const inTileY = py - tileY * tileSize;
 
-    if (ctrl.pixelText) ctrl.pixelText.textContent = `pixel: ${px}, ${py}\nタイル: z=${NATIVE_MAX}, x=${tileX}, y=${tileY}\n読み込み中...`;
+    const d = toDisplayTileCoords(px, py);
+    if (ctrl.pixelText) ctrl.pixelText.textContent = `pixel: ${d.tileX}, ${d.tileY}, ${d.inX}, ${d.inY}\nタイル: z=${NATIVE_MAX}, x=${tileX}, y=${tileY}\n読み込み中...`;
     if (ctrl.pixelOutput) ctrl.pixelOutput.style.display = 'flex';
     if (ctrl.colorSwatch) ctrl.colorSwatch.style.background = '#ffffff';
 
@@ -711,13 +818,16 @@ async function onMapClick(e) {
         const { r, g, b, a } = pxData;
         const hex = '#' + [r, g, b].map(v => v.toString(16).padStart(2, '0')).join('').toUpperCase();
         if (ctrl.colorSwatch) ctrl.colorSwatch.style.background = hex;
-        if (ctrl.pixelText) ctrl.pixelText.textContent = `pixel: ${px}, ${py}\nタイル: z=${NATIVE_MAX}, x=${tileX}, y=${tileY}\nRGBA: ${r}, ${g}, ${b}, ${a}\nHEX: ${hex}`;
+        if (ctrl.pixelText) ctrl.pixelText.textContent = `pixel: ${d.tileX}, ${d.tileY}, ${d.inX}, ${d.inY}\nタイル: z=${NATIVE_MAX}, x=${tileX}, y=${tileY}\nRGBA: ${r}, ${g}, ${b}, ${a}\nHEX: ${hex}`;
         lastPicked = { px, py, r, g, b, a, hex };
 
         showPixelMarker(px, py);
     } catch (err) {
+        if (isAbortError(err)) {
+            return;
+        }
         console.error(err);
-        if (ctrl.pixelText) ctrl.pixelText.textContent = `pixel: ${px}, ${py}\nエラー: ${err.message}\nCORS を確認してください`;
+        if (ctrl.pixelText) ctrl.pixelText.textContent = `pixel: ${d.tileX}, ${d.tileY}, ${d.inX}, ${d.inY}\nエラー: ${err.message}\nCORS を確認してください`;
         if (ctrl.colorSwatch) ctrl.colorSwatch.style.background = '#ffffff';
         lastPicked = null;
         pixelMarker.style.display = 'none';
@@ -867,6 +977,22 @@ ctrl.settingsBtn?.addEventListener('click', () => {
     const isHidden = panel.classList.contains('hidden');
     panel.classList.toggle('hidden');
     ctrl.settingsBtn.setAttribute('aria-expanded', String(!isHidden));
+});
+
+ctrl.infoBtn?.addEventListener('click', () => {
+    const panel = ctrl.infoPanel;
+    if (!panel) return;
+    const isHidden = panel.classList.contains('hidden');
+    panel.classList.toggle('hidden');
+    ctrl.infoBtn.setAttribute('aria-expanded', String(!isHidden));
+});
+
+ctrl.updatesBtn?.addEventListener('click', () => {
+    const panel = ctrl.updatesPanel;
+    if (!panel) return;
+    const isHidden = panel.classList.contains('hidden');
+    panel.classList.toggle('hidden');
+    ctrl.updatesBtn.setAttribute('aria-expanded', String(!isHidden));
 });
 
 // 初期化: 日付を今日にセット & タイムスタンプ読み込み

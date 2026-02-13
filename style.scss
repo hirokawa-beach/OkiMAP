@@ -39,6 +39,47 @@ body::before {
   z-index: 0;
 }
 
+/* loading overlay */
+#loadingOverlay {
+  position: fixed;
+  inset: 0;
+  z-index: 2000;
+  display: none;
+  align-items: center;
+  justify-content: center;
+  background: rgba(255, 255, 255, 0.65);
+  backdrop-filter: blur(4px) saturate(1.05);
+}
+#loadingOverlay.is-visible {
+  display: flex;
+}
+.loading-card {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 12px 16px;
+  border-radius: 999px;
+  background: $glass-strong;
+  border: 1px solid rgba(255,255,255,0.8);
+  box-shadow: $shadow-2;
+  color: $ink-1;
+  font-weight: 600;
+}
+.spinner {
+  width: 22px;
+  height: 22px;
+  border-radius: 50%;
+  border: 3px solid rgba(13,64,180,0.2);
+  border-top-color: #1d5cff;
+  animation: spin 900ms linear infinite;
+}
+.loading-text {
+  font-size: 13px;
+}
+@keyframes spin {
+  to { transform: rotate(360deg); }
+}
+
 /* マップ全画面 */
 #map {
   width: 100%;
@@ -388,9 +429,9 @@ button:active { transform: translateY(1px); }
 }
 /* スライダー周りのスタイル - dateBar の下に表示するため bottom を低く */
 #dateSliderBar {
-  position: absolute;
+  position: fixed;
   left: 50%;
-  bottom: 18px; /* dateBar より下に表示 */
+  bottom: calc(18px + env(safe-area-inset-bottom, 0px)); /* dateBar より下に表示 */
   transform: translateX(-50%);
   z-index: 1400;
   width: min(720px, 86%);
@@ -468,7 +509,7 @@ button:active { transform: translateY(1px); }
 
 
   #dateSliderBar {
-    bottom: 14px;
+    bottom: calc(14px + env(safe-area-inset-bottom, 0px));
     width: min(560px, 92%);
     padding: 6px 10px;
   }

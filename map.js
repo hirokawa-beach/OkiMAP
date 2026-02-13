@@ -14,6 +14,8 @@ const IMG_H = 9000;
 
 // --- タイムスタンプリスト設定 ---
 const TIMESTAMPS_URL = 'https://hb-raspi1.wplaceoki.com/okimap/timestamps.txt';
+const DEFAULT_TIMESTAMP = '202508192059';
+const STORAGE_KEY = 'okimap_state_v1';
 
 // --- 状態とキャッシュ ---
 let map;
@@ -30,6 +32,17 @@ const MAX_TILE_PIXEL_CACHE = 120; // ピクセルキャッシュ上限（重い�
 const MAX_SAMPLES = 500000; // 最大サンプル数（自動間引きの閾値）
 let isInteracting = false;
 let redrawTimer = null;
+let isSnappingZoom = false;
+let isMapReady = false;
+let savedState = null;
+let initialLoading = true;
+let preloadController = null;
+let preloadQueue = [];
+let preloadInFlight = 0;
+let isPreloading = false;
+let preloadRunId = 0;
+const MAX_PRELOAD_INFLIGHT = 2;
+const MAX_PRELOAD_TASKS = 4000;
 
 // 表示用タイル座標系（pixel: 0,0 を 1791,901,0,0 に対応）
 const DISPLAY_TILE_BASE_X = 1791;
@@ -69,10 +82,13 @@ const ctrl = {
     infoPanel: document.getElementById('infoPanel'),
     updatesPanel: document.getElementById('updatesPanel'),
     gridMinScreen: document.getElementById('gridMinScreen'),
+    preloadRange: document.getElementById('preloadRange'),
     timeLabel: document.getElementById('timeLabel'),
     dateSlider: document.getElementById('dateSlider'),
     dateSliderInfo: document.getElementById('dateSliderInfo'),
-    dateSliderBar: document.getElementById('dateSliderBar')
+    dateSliderBar: document.getElementById('dateSliderBar'),
+    preloadBtn: document.getElementById('preloadBtn'),
+    preloadInfo: document.getElementById('preloadInfo')
 };
 
 const canvas = document.getElementById('pixelGridCanvas');
@@ -82,9 +98,14 @@ const pixelMarker = document.getElementById('pixelMarker');
 // ベース URL
 const BASE_TILE_HOST = 'https://hb-raspi1.wplaceoki.com/okimap/img';
 
-// タイル URL 組み立て（explicitStamp が渡ればそれを使う）
+// タイル URL 組み立て（12桁のタイムスタンプのみ許可）
+function normalizeStamp(stamp) {
+  return /^\d{12}$/.test(stamp || '') ? stamp : null;
+}
+
 function buildTileUrlForStamp(stamp, z, x, y) {
-  const stampPart = stamp || (ctrl.dateSelect?.value || '').replace(/-/g,'') || '';
+  const stampPart = normalizeStamp(stamp) || normalizeStamp(currentTimestampFull);
+  if (!stampPart) return null;
   return `${BASE_TILE_HOST}/${stampPart}/${z}/${x}/${y}.png?native=${z}`;
 }
 
@@ -104,6 +125,36 @@ function toDisplayTileCoords(px, py) {
   const inX = ((px % DISPLAY_TILE_SIZE) + DISPLAY_TILE_SIZE) % DISPLAY_TILE_SIZE;
   const inY = ((py % DISPLAY_TILE_SIZE) + DISPLAY_TILE_SIZE) % DISPLAY_TILE_SIZE;
   return { tileX, tileY, inX, inY };
+}
+
+function getTileRangeForZoom(z) {
+  const scale = Math.pow(2, NATIVE_MAX - z);
+  const w = IMG_W / scale;
+  const h = IMG_H / scale;
+  const tilesX = Math.max(1, Math.ceil(w / TILE_SIZE));
+  const tilesY = Math.max(1, Math.ceil(h / TILE_SIZE));
+  return { tilesX, tilesY };
+}
+
+function clamp(v, min, max) {
+  return Math.max(min, Math.min(max, v));
+}
+
+function getVisibleTileRange(z) {
+  if (!map) return null;
+  const bounds = map.getPixelBounds(z);
+  if (!bounds) return null;
+  const minX = Math.floor(bounds.min.x / TILE_SIZE);
+  const maxX = Math.floor((bounds.max.x - 1) / TILE_SIZE);
+  const minY = Math.floor(bounds.min.y / TILE_SIZE);
+  const maxY = Math.floor((bounds.max.y - 1) / TILE_SIZE);
+  const { tilesX, tilesY } = getTileRangeForZoom(z);
+  return {
+    minX: clamp(minX, 0, tilesX - 1),
+    maxX: clamp(maxX, 0, tilesX - 1),
+    minY: clamp(minY, 0, tilesY - 1),
+    maxY: clamp(maxY, 0, tilesY - 1)
+  };
 }
 
 function isAbortError(err) {
@@ -144,6 +195,40 @@ function enqueueTileFetch(fn, signal) {
   });
 }
 
+function resetPreloadQueue() {
+  for (const job of preloadQueue) {
+    try { job.reject(new DOMException('Aborted', 'AbortError')); } catch (e) {}
+  }
+  preloadQueue = [];
+  preloadInFlight = 0;
+}
+
+function pumpPreloadQueue() {
+  while (preloadInFlight < MAX_PRELOAD_INFLIGHT && preloadQueue.length > 0) {
+    const job = preloadQueue.shift();
+    if (!job) continue;
+    const { fn, resolve, reject, signal } = job;
+    if (signal && signal.aborted) {
+      reject(new DOMException('Aborted', 'AbortError'));
+      continue;
+    }
+    preloadInFlight++;
+    fn()
+      .then(resolve, reject)
+      .finally(() => {
+        preloadInFlight--;
+        pumpPreloadQueue();
+      });
+  }
+}
+
+function enqueuePreload(fn, signal) {
+  return new Promise((resolve, reject) => {
+    preloadQueue.push({ fn, resolve, reject, signal });
+    pumpPreloadQueue();
+  });
+}
+
 // --- タイムスタンプリスト取得 ---
 async function fetchTimestampList() {
   try {
@@ -180,6 +265,38 @@ function parseTimestampList(text) {
   uniqueDates = dates.map(d => `${d.slice(0,4)}-${d.slice(4,6)}-${d.slice(6,8)}`);
   populateDateSelect();
   setupSlider();
+}
+
+function showLoading() {
+  const el = document.getElementById('loadingOverlay');
+  if (el) el.classList.add('is-visible');
+}
+
+function hideLoading() {
+  const el = document.getElementById('loadingOverlay');
+  if (el) el.classList.remove('is-visible');
+}
+
+function loadSavedState() {
+  try {
+    const raw = localStorage.getItem(STORAGE_KEY);
+    if (!raw) return null;
+    const parsed = JSON.parse(raw);
+    return parsed && typeof parsed === 'object' ? parsed : null;
+  } catch (e) {
+    return null;
+  }
+}
+
+function saveState(patch = {}) {
+  const next = {
+    ...(savedState || {}),
+    ...patch
+  };
+  savedState = next;
+  try {
+    localStorage.setItem(STORAGE_KEY, JSON.stringify(next));
+  } catch (e) {}
 }
 
 // populate date select with available dates only
@@ -230,6 +347,7 @@ function setTimestampByIndex(index, { preserveView = true } = {}) {
   if (ctrl.timeLabel) ctrl.timeLabel.textContent = `${timePart.slice(0,2)}:${timePart.slice(2)}`;
   // 切替（ダブルバッファでフェード）
   switchToTimestamp(currentTimestampFull);
+  saveState({ timestamp: currentTimestampFull });
 }
 
 // find index of timestamp (or -1)
@@ -248,19 +366,42 @@ function createTileLayerForStamp(stamp) {
     crossOrigin: true
   });
 
+  // Leaflet 内部の _tileReady が、レイヤー削除後に呼ばれて _map が null になることがある。
+  // その場合は何もしないで安全に抜ける。
+  const originalTileReady = layer._tileReady && layer._tileReady.bind(layer);
+  if (originalTileReady) {
+    layer._tileReady = function (coords, err, tile) {
+      const mapRef = this._map;
+      if (!mapRef) return;
+      try {
+        return originalTileReady(coords, err, tile);
+      } catch (e) {
+        if (!this._map || /_fadeAnimated/.test(String(e && e.message))) return;
+        throw e;
+      }
+    };
+  }
+
   // override createTile to use the stamp captured by closure
   const originalCreateTile = layer.createTile.bind(layer);
   layer.createTile = function (coords, done) {
-    if (coords.x < 0 || coords.y < 0) {
+    const { tilesX, tilesY } = getTileRangeForZoom(coords.z);
+    if (coords.x < 0 || coords.y < 0 || coords.x >= tilesX || coords.y >= tilesY) {
       const tile = document.createElement('img');
       setTimeout(done, 0);
       return tile;
     }
+    const tileUrl = buildTileUrlForStamp(stamp, coords.z, coords.x, coords.y);
+    if (!tileUrl) {
+      const tile = document.createElement('img');
+      setTimeout(done, 0);
+      return tile;
+    }
+
     const tileEl = originalCreateTile(coords, done);
     try { tileEl.crossOrigin = 'anonymous'; } catch (e) {}
-    const z = coords.z, x = coords.x, y = coords.y;
     setTimeout(() => {
-      tileEl.src = buildTileUrlForStamp(stamp, z, x, y);
+      tileEl.src = tileUrl;
     }, 0);
     return tileEl;
   };
@@ -284,7 +425,7 @@ function switchToTimestamp(newStamp) {
   resetTileFetchQueue();
   tileFetchController = new AbortController();
 
-  const stampKey = newStamp || (ctrl.dateSelect?.value || '').replace(/-/g,'') || null;
+  const stampKey = normalizeStamp(newStamp);
 
   // create new layer using stampKey (if null, create with date-based empty stamp -> buildTileUrlForStamp handles it)
   const newLayer = createTileLayerForStamp(stampKey);
@@ -339,6 +480,10 @@ function switchToTimestamp(newStamp) {
       loadingSwitch = null;
       // redraw overlays/canvas
       drawPixelGrid();
+      if (initialLoading) {
+        initialLoading = false;
+        hideLoading();
+      }
     }, 360);
   };
 
@@ -364,9 +509,21 @@ function initMap() {
         minZoom: 0,
         maxZoom: DISPLAY_MAX,
         zoomSnap: parseFloat(ctrl.zoomSnap?.value || 1),
-        zoomDelta: 1,
+        zoomDelta: parseFloat(ctrl.zoomSnap?.value || 1),
         inertia: false,
         fadeAnimation: false
+    });
+
+    map.whenReady(() => {
+        isMapReady = true;
+        updateZoomInfo();
+        resizeCanvasToMap();
+        if (savedState && savedState.view) {
+            const v = savedState.view;
+            if (Number.isFinite(v.lat) && Number.isFinite(v.lng) && Number.isFinite(v.zoom)) {
+                map.setView([v.lat, v.lng], v.zoom, { animate: false });
+            }
+        }
     });
 
     // まずはダミーの activeTileLayer を作っておく（空のstampで）
@@ -380,6 +537,18 @@ function initMap() {
     map.on('zoomend', onInteractionEnd);
     map.on('movestart', onInteractionStart);
     map.on('moveend', onInteractionEnd);
+    map.on('moveend', () => {
+        if (!ensureMapReady()) return;
+        const c = map.getCenter();
+        const z = map.getZoom();
+        saveState({ view: { lat: c.lat, lng: c.lng, zoom: z } });
+    });
+    map.on('zoomend', () => {
+        if (!ensureMapReady()) return;
+        const c = map.getCenter();
+        const z = map.getZoom();
+        saveState({ view: { lat: c.lat, lng: c.lng, zoom: z } });
+    });
     map.on('mousemove', (e) => { showCoords(e); });
     window.addEventListener('resize', resizeCanvasToMap);
     resizeCanvasToMap();
@@ -398,6 +567,10 @@ function initMap() {
     updateZoomInfo();
 }
 
+function ensureMapReady() {
+    return !!map && isMapReady;
+}
+
 // 設定を適用（レイヤーを完全に破棄せず、存在する場合は再描画）
 function applySettings(opts = {}) {
     const zoomSnap = parseFloat(ctrl.zoomSnap?.value || 1);
@@ -406,6 +579,7 @@ function applySettings(opts = {}) {
 
     map.options.maxZoom = DISPLAY_MAX;
     map.options.zoomSnap = zoomSnap;
+    map.options.zoomDelta = zoomSnap;
 
     // 再描画（レイヤーは switchToTimestamp で差し替えるので、ここでは activeTileLayer を redraw）
     if (activeTileLayer) {
@@ -417,21 +591,39 @@ function applySettings(opts = {}) {
     updateZoomInfo();
     console.log('Applied settings:', { zoomSnap, date: ctrl.dateSelect?.value, timestamp: currentTimestampFull });
 
+    saveState({
+        settings: {
+            zoomSnap: ctrl.zoomSnap?.value,
+            sampleStep: ctrl.sampleStep?.value,
+            overlayOpacity: ctrl.overlayOpacity?.value,
+            gridMinScreen: ctrl.gridMinScreen?.value,
+            preloadRange: ctrl.preloadRange?.value,
+            pixelPicker: !!ctrl.pixelPickerToggle?.checked,
+            pixelGrid: !!ctrl.pixelGridToggle?.checked,
+            colorize: !!ctrl.colorizeToggle?.checked
+        }
+    });
+
     drawPixelGrid();
 }
 
 // ズーム情報更新
 function updateZoomInfo() {
-    if (!map) return;
+    if (!ensureMapReady()) return;
     const z = map.getZoom();
-    const scale = Math.pow(2, z - NATIVE_MAX);
-    const scaleText = z >= NATIVE_MAX ? `×${scale}` : `1/${Math.pow(2, NATIVE_MAX - z)}`;
-    if (ctrl.zoomInfo) ctrl.zoomInfo.textContent = `zoom: ${z} (nativeMax: ${NATIVE_MAX}, scale: ${scaleText})`;
+    const displayZoom = Math.round(z * 10) / 10;
+    const scale = Math.pow(2, displayZoom - NATIVE_MAX);
+    const formatNumber = (v, digits = 3) => {
+        const s = v.toFixed(digits);
+        return s.replace(/\.?0+$/, '');
+    };
+    const scaleText = `×${formatNumber(scale)}`;
+    if (ctrl.zoomInfo) ctrl.zoomInfo.textContent = `zoom: ${displayZoom} (nativeMax: ${NATIVE_MAX}, scale: ${scaleText})`;
 }
 
 // マウス座標表示（ピクセル単位）
 function showCoords(e) {
-    if (!map) return;
+    if (!ensureMapReady()) return;
     const p = map.project(e.latlng, NATIVE_MAX);
     const px = Math.round(p.x);
     const py = Math.round(p.y);
@@ -441,7 +633,7 @@ function showCoords(e) {
 
 // キャンバスサイズをマップに合わせる
 function resizeCanvasToMap() {
-    if (!map) return;
+    if (!ensureMapReady()) return;
     const size = map.getSize ? map.getSize() : { x: window.innerWidth, y: window.innerHeight };
     const dpr = window.devicePixelRatio || 1;
     canvas.style.width = size.x + 'px';
@@ -466,6 +658,19 @@ function onInteractionStart() {
 
 function onInteractionEnd() {
     isInteracting = false;
+    const zoomSnap = parseFloat(ctrl.zoomSnap?.value || 1);
+    if (!isSnappingZoom && Number.isFinite(zoomSnap) && zoomSnap > 0) {
+        const z = map.getZoom();
+        const snapped = Math.round(z / zoomSnap) * zoomSnap;
+        if (Math.abs(snapped - z) > 1e-6) {
+            isSnappingZoom = true;
+            map.setZoom(snapped, { animate: false });
+            return;
+        }
+    }
+    if (isSnappingZoom) {
+        isSnappingZoom = false;
+    }
     updateZoomInfo();
     if (redrawTimer) clearTimeout(redrawTimer);
     redrawTimer = setTimeout(() => {
@@ -475,7 +680,7 @@ function onInteractionEnd() {
 
 // メイン描画（既存ロジックを保持）
 async function drawPixelGrid() {
-    if (!map) return;
+    if (!ensureMapReady()) return;
     if (isInteracting) return;
     clearCanvas();
     pixelMarker.style.display = 'none';
@@ -675,23 +880,12 @@ async function drawColorOverlay() {
         autoStep = Math.max(autoStep, Math.ceil(1 / pixelScreen));
     }
 
-    let totalEstimate = 0;
-    for (let tx = startTileX; tx <= endTileX; tx++) {
-        for (let ty = startTileY; ty <= endTileY; ty++) {
-            const left = Math.max(startX, tx * tileSize);
-            const right = Math.min(endX, (tx + 1) * tileSize);
-            const top = Math.max(startY, ty * tileSize);
-            const bottom = Math.min(endY, (ty + 1) * tileSize);
-            if (right <= left || bottom <= top) continue;
-            const w = right - left;
-            const h = bottom - top;
-            totalEstimate += Math.ceil(w / autoStep) * Math.ceil(h / autoStep);
-        }
-    }
-
     let step = autoStep;
-    if (totalEstimate > MAX_SAMPLES) {
-        const factor = Math.sqrt(totalEstimate / MAX_SAMPLES);
+    const estSampleX = Math.max(1, pixelScreenX * step);
+    const estSampleY = Math.max(1, pixelScreenY * step);
+    const estSamples = (vw * vh) / (estSampleX * estSampleY);
+    if (estSamples > MAX_SAMPLES) {
+        const factor = Math.sqrt(estSamples / MAX_SAMPLES);
         step = Math.ceil(step * factor);
     }
 
@@ -762,13 +956,32 @@ async function drawColorOverlay() {
 
 // タイルを取得して ImageBitmap を返す（キャッシュあり）
 async function fetchTileBitmap(z, x, y) {
-    const stampKey = currentTimestampFull || (ctrl.dateSelect?.value || '').replace(/-/g,'') || 'nodate';
+    const stampKey = normalizeStamp(currentTimestampFull);
+    if (!stampKey) throw new Error('timestamp not set');
     const key = `${stampKey}/${z}/${x}/${y}`;
     if (tileCache.has(key)) return tileCache.get(key);
     const url = buildTileUrlForStamp(stampKey, z, x, y);
+    if (!url) throw new Error('timestamp not set');
     const signal = tileFetchController ? tileFetchController.signal : undefined;
     if (signal && signal.aborted) throw new DOMException('Aborted', 'AbortError');
     return enqueueTileFetch(async () => {
+      const resp = await fetch(url, { mode: 'cors', signal });
+      if (!resp.ok) throw new Error(`Tile fetch failed: ${resp.status} ${resp.statusText}`);
+      const blob = await resp.blob();
+      const bitmap = await createImageBitmap(blob);
+      setCacheWithLimit(tileCache, key, bitmap, MAX_TILE_CACHE);
+      return bitmap;
+    }, signal);
+}
+
+async function fetchTileBitmapForStamp(stamp, z, x, y, signal) {
+    const stampKey = normalizeStamp(stamp);
+    if (!stampKey) throw new Error('timestamp not set');
+    const key = `${stampKey}/${z}/${x}/${y}`;
+    if (tileCache.has(key)) return tileCache.get(key);
+    const url = buildTileUrlForStamp(stampKey, z, x, y);
+    if (!url) throw new Error('timestamp not set');
+    return enqueuePreload(async () => {
       const resp = await fetch(url, { mode: 'cors', signal });
       if (!resp.ok) throw new Error(`Tile fetch failed: ${resp.status} ${resp.statusText}`);
       const blob = await resp.blob();
@@ -794,6 +1007,7 @@ async function readPixelFromTileBitmap(bitmap, x, y) {
 let lastPicked = null;
 async function onMapClick(e) {
     if (!ctrl.pixelPickerToggle?.checked) return;
+    if (!ensureMapReady()) return;
 
     const tileSize = TILE_SIZE;
 
@@ -836,6 +1050,7 @@ async function onMapClick(e) {
 
 // 選択ピクセルを赤枠で表示
 function showPixelMarker(imagePxX, imagePxY) {
+    if (!ensureMapReady()) return;
     const topLeft = map.latLngToContainerPoint(map.unproject([imagePxX, imagePxY], NATIVE_MAX));
     const bottomRight = map.latLngToContainerPoint(map.unproject([imagePxX + 1, imagePxY + 1], NATIVE_MAX));
     const left = Math.round(topLeft.x);
@@ -925,6 +1140,125 @@ ctrl.dateSelect?.addEventListener('change', async () => {
     await updateCurrentTimestampForDate(ctrl.dateSelect.value, { preserveView: true });
 });
 
+function buildPreloadOrder(centerIndex, range, total) {
+    const order = [];
+    order.push(centerIndex);
+    for (let i = 1; i <= range; i++) {
+        const left = centerIndex - i;
+        const right = centerIndex + i;
+        if (left >= 0) order.push(left);
+        if (right < total) order.push(right);
+    }
+    return order;
+}
+
+function updatePreloadInfo(text) {
+    if (ctrl.preloadInfo) ctrl.preloadInfo.textContent = text || '';
+}
+
+function finishPreload(runId, message) {
+    if (runId !== preloadRunId) return;
+    isPreloading = false;
+    if (ctrl.preloadBtn) ctrl.preloadBtn.textContent = '先読み';
+    updatePreloadInfo(message || '');
+}
+
+function cancelPreload() {
+    preloadRunId++;
+    if (preloadController) {
+        try { preloadController.abort(); } catch (e) {}
+    }
+    resetPreloadQueue();
+    isPreloading = false;
+    if (ctrl.preloadBtn) ctrl.preloadBtn.textContent = '先読み';
+    updatePreloadInfo('先読み停止');
+}
+
+function startPreloadAroundCurrent(range = 30) {
+    if (!ensureMapReady()) return;
+    if (!currentTimestampFull) {
+        updatePreloadInfo('タイムスタンプ未選択');
+        return;
+    }
+
+    const idx = findTimestampIndex(currentTimestampFull);
+    if (idx < 0 || !timestampLines.length) {
+        updatePreloadInfo('先読み不可');
+        return;
+    }
+
+    const z = clamp(Math.round(map.getZoom()), 0, NATIVE_MAX);
+    const tileRange = getVisibleTileRange(z);
+    if (!tileRange) {
+        updatePreloadInfo('範囲取得失敗');
+        return;
+    }
+
+    preloadRunId++;
+    const runId = preloadRunId;
+    isPreloading = true;
+    if (ctrl.preloadBtn) ctrl.preloadBtn.textContent = '停止';
+
+    resetPreloadQueue();
+    preloadController = new AbortController();
+
+    const order = buildPreloadOrder(idx, range, timestampLines.length);
+    let total = 0;
+    let done = 0;
+    let skipped = 0;
+    let lastUpdate = 0;
+
+    const { minX, maxX, minY, maxY } = tileRange;
+
+    updatePreloadInfo('先読み開始...');
+
+    outer:
+    for (const i of order) {
+        const stamp = timestampLines[i];
+        if (!normalizeStamp(stamp)) continue;
+        for (let x = minX; x <= maxX; x++) {
+            for (let y = minY; y <= maxY; y++) {
+                if (total >= MAX_PRELOAD_TASKS) break outer;
+                const key = `${stamp}/${z}/${x}/${y}`;
+                if (tileCache.has(key)) {
+                    skipped++;
+                    continue;
+                }
+                total++;
+                fetchTileBitmapForStamp(stamp, z, x, y, preloadController.signal)
+                    .catch((err) => {
+                        if (isAbortError(err)) return;
+                    })
+                    .finally(() => {
+                        if (runId !== preloadRunId) return;
+                        done++;
+                        const now = Date.now();
+                        if (done === total || now - lastUpdate > 200) {
+                            lastUpdate = now;
+                            updatePreloadInfo(`先読み ${done}/${total} (skip ${skipped})`);
+                        }
+                        if (done === total) {
+                            finishPreload(runId, `先読み完了 ${done}/${total}`);
+                        }
+                    });
+            }
+        }
+    }
+
+    if (total === 0) {
+        finishPreload(runId, '先読み対象なし');
+    }
+}
+
+ctrl.preloadBtn?.addEventListener('click', () => {
+    if (isPreloading) {
+        cancelPreload();
+        return;
+    }
+    const range = Math.max(0, Math.min(300, parseInt(ctrl.preloadRange?.value || '30', 10)));
+    startPreloadAroundCurrent(Number.isFinite(range) ? range : 30);
+});
+
 // updateCurrentTimestampForDate: set currentTimestampFull to latest for that date,
 // update UI and use switchToTimestamp() to swap layers smoothly
 async function updateCurrentTimestampForDate(dateISO, opts = {}) {
@@ -950,6 +1284,7 @@ async function updateCurrentTimestampForDate(dateISO, opts = {}) {
     }
     // 切替実行
     switchToTimestamp(currentTimestampFull);
+    saveState({ timestamp: currentTimestampFull });
   } else {
     currentTimestampFull = null;
     if (ctrl.timeLabel) ctrl.timeLabel.textContent = '--:--';
@@ -1000,10 +1335,36 @@ ctrl.updatesBtn?.addEventListener('click', () => {
     const today = new Date();
     const todayISO = formatDateYYYYMMDD(today);
 
+    showLoading();
+
+    savedState = loadSavedState();
+
+    // restore settings (before map init)
+    if (savedState && savedState.settings) {
+      const s = savedState.settings;
+      if (ctrl.zoomSnap && s.zoomSnap != null) ctrl.zoomSnap.value = String(s.zoomSnap);
+      if (ctrl.sampleStep && s.sampleStep != null) ctrl.sampleStep.value = String(s.sampleStep);
+      if (ctrl.overlayOpacity && s.overlayOpacity != null) ctrl.overlayOpacity.value = String(s.overlayOpacity);
+      if (ctrl.gridMinScreen && s.gridMinScreen != null) ctrl.gridMinScreen.value = String(s.gridMinScreen);
+      if (ctrl.preloadRange && s.preloadRange != null) ctrl.preloadRange.value = String(s.preloadRange);
+      if (ctrl.pixelPickerToggle && typeof s.pixelPicker === 'boolean') ctrl.pixelPickerToggle.checked = s.pixelPicker;
+      if (ctrl.pixelGridToggle && typeof s.pixelGrid === 'boolean') ctrl.pixelGridToggle.checked = s.pixelGrid;
+      if (ctrl.colorizeToggle && typeof s.colorize === 'boolean') ctrl.colorizeToggle.checked = s.colorize;
+    } else {
+      if (ctrl.preloadRange) ctrl.preloadRange.value = '30';
+    }
+
     await fetchTimestampList();
 
     if (timestampLines.length > 0) {
-      currentTimestampFull = timestampLines[0]; // top of file (YYYYMMDDhhmm)
+      const savedTs = savedState && typeof savedState.timestamp === 'string' ? savedState.timestamp : null;
+      if (savedTs && timestampLines.includes(savedTs)) {
+        currentTimestampFull = savedTs;
+      } else if (timestampLines.includes(DEFAULT_TIMESTAMP)) {
+        currentTimestampFull = DEFAULT_TIMESTAMP;
+      } else {
+        currentTimestampFull = timestampLines[0]; // top of file (YYYYMMDDhhmm)
+      }
       const datePart = currentTimestampFull.slice(0,8);
       const timePart = currentTimestampFull.slice(8);
       const dateISO = `${datePart.slice(0,4)}-${datePart.slice(4,6)}-${datePart.slice(6,8)}`;
@@ -1016,6 +1377,7 @@ ctrl.updatesBtn?.addEventListener('click', () => {
         ctrl.dateSlider.value = idx;
         if (ctrl.dateSliderInfo) ctrl.dateSliderInfo.textContent = `${idx + 1} / ${timestampLines.length}`;
       }
+      saveState({ timestamp: currentTimestampFull });
     } else {
       await updateCurrentTimestampForDate(ctrl.dateSelect?.value);
     }
@@ -1023,6 +1385,7 @@ ctrl.updatesBtn?.addEventListener('click', () => {
     initMap();
     // 初回は activeTileLayer を currentTimestampFull へ切替
     switchToTimestamp(currentTimestampFull);
+    applySettings();
 })();
 
 // キーボードショートカット
@@ -1031,6 +1394,8 @@ window.addEventListener('keydown', (ev) => {
     if (ev.key === '+' || ev.key === '=') map.zoomIn();
     if (ev.key === '-') map.zoomOut();
     if (ev.key === 'r') ctrl.fitBtn?.click();
+    if (ev.key === 'ArrowLeft') ctrl.prevDate?.click();
+    if (ev.key === 'ArrowRight') ctrl.nextDate?.click();
 });
 
 // 初回キャンバスサイズ合わせ

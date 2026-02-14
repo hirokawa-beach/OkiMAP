@@ -143,7 +143,7 @@ body::before {
   position: absolute;
   left: 18px;
   top: 120px;
-  z-index: 1300;
+  z-index: 1350;
   min-width: 340px;
   padding: 14px;
   border-radius: $border-radius;
@@ -299,6 +299,10 @@ button {
   box-shadow: 0 8px 16px rgba(13,64,180,0.25);
   transition: transform 150ms ease, box-shadow 150ms ease;
 }
+#applyBtn[data-dirty="1"] {
+  background: linear-gradient(180deg,#ff5a5a,#b81414);
+  box-shadow: 0 8px 16px rgba(184,20,20,0.28);
+}
 button.small-btn {
   background: linear-gradient(180deg,#ffffff,#f2f6ff);
   color: $ink-1;
@@ -316,9 +320,9 @@ button:active { transform: translateY(1px); }
 #dateBar {
   position: absolute;
   left: 50%;
-  bottom: 75px; /* 少し上に移動 */
+  bottom: 80px; /* 少し上に移動 */
   transform: translateX(-50%);
-  z-index: 1400;
+  z-index: 1200;
   display:flex;
   gap:10px;
   align-items:center;
@@ -333,6 +337,12 @@ button:active { transform: translateY(1px); }
   border-radius:8px;
   border:1px solid $line;
   background:white;
+}
+#preloadBtn {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  white-space: nowrap;
 }
 
 /* time label */
@@ -361,7 +371,7 @@ button:active { transform: translateY(1px); }
   left: 50%;
   bottom: 152px; /* dateBar より上に表示するが重ならないよう少し上へ */
   transform: translateX(-50%);
-  z-index: 1400;
+  z-index: 1200;
   display:flex;
   gap:10px;
   align-items:center;
@@ -378,7 +388,7 @@ button:active { transform: translateY(1px); }
   position: absolute;
   right: 18px;
   top: 18px;
-  z-index: 1300;
+  z-index: 1200;
   background: $glass-strong;
   padding:8px 10px;
   border-radius:8px;
@@ -389,7 +399,7 @@ button:active { transform: translateY(1px); }
   position: absolute;
   left: 18px;
   bottom: 80px;
-  z-index: 1300;
+  z-index: 1200;
   background: $glass-strong;
   padding:8px 10px;
   border-radius:8px;
@@ -433,7 +443,7 @@ button:active { transform: translateY(1px); }
   left: 50%;
   bottom: calc(18px + env(safe-area-inset-bottom, 0px)); /* dateBar より下に表示 */
   transform: translateX(-50%);
-  z-index: 1400;
+  z-index: 1200;
   width: min(720px, 86%);
   display:flex;
   align-items:center;
@@ -539,6 +549,14 @@ button:active { transform: translateY(1px); }
 }
 
 @media (max-width: 420px) {
+  #preloadBtn {
+    padding: 6px;
+    font-size: 12px;
+  }
+
+  #preloadBtn .preload-text {
+    display: none;
+  }
 
   #pixelOutput {
     flex-wrap: wrap;
@@ -550,3 +568,13 @@ button:active { transform: translateY(1px); }
     text-align: left;
   }
 }
+  #dateBar {
+    gap: 8px;
+    padding: 6px 10px;
+  }
+
+  #preloadBtn {
+    padding: 6px 8px;
+    font-size: 12px;
+    line-height: 1;
+  }

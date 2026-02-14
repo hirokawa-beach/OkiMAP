@@ -9,8 +9,8 @@ const DISPLAY_MAX = 12;
 const RENDER_MODE = 'smooth'; // 固定
 
 // 内部固定の元画像サイズ
-const IMG_W = 9000;
-const IMG_H = 9000;
+const IMG_W = 12000;
+const IMG_H = 10000;
 
 // --- タイムスタンプリスト設定 ---
 const TIMESTAMPS_URL = 'https://hb-raspi1.wplaceoki.com/okimap/timestamps.txt';
@@ -72,6 +72,7 @@ const ctrl = {
     pixelGridToggle: document.getElementById('pixelGridToggle'),
     colorizeToggle: document.getElementById('colorizeToggle'),
     applyBtn: document.getElementById('applyBtn'),
+    undoBtn: document.getElementById('undoBtn'),
     fitBtn: document.getElementById('fitBtn'),
     zoomInfo: document.getElementById('zoomInfo'),
     coordsInfo: document.getElementById('coordsInfo'),
@@ -94,6 +95,62 @@ const ctrl = {
 const canvas = document.getElementById('pixelGridCanvas');
 const ctx = canvas.getContext('2d');
 const pixelMarker = document.getElementById('pixelMarker');
+
+let appliedSettings = null;
+let settingsDirty = false;
+let isSettingsPanelOpen = false;
+let panelSnapshot = null;
+let panelBaseline = null;
+
+function getSettingsFromControls() {
+    return {
+        zoomSnap: ctrl.zoomSnap?.value ?? '',
+        sampleStep: ctrl.sampleStep?.value ?? '',
+        overlayOpacity: ctrl.overlayOpacity?.value ?? '',
+        gridMinScreen: ctrl.gridMinScreen?.value ?? '',
+        preloadRange: ctrl.preloadRange?.value ?? '',
+        pixelPicker: !!ctrl.pixelPickerToggle?.checked,
+        pixelGrid: !!ctrl.pixelGridToggle?.checked,
+        colorize: !!ctrl.colorizeToggle?.checked
+    };
+}
+
+function setControlsFromSettings(s) {
+    if (!s) return;
+    if (ctrl.zoomSnap && s.zoomSnap != null) ctrl.zoomSnap.value = String(s.zoomSnap);
+    if (ctrl.sampleStep && s.sampleStep != null) ctrl.sampleStep.value = String(s.sampleStep);
+    if (ctrl.overlayOpacity && s.overlayOpacity != null) ctrl.overlayOpacity.value = String(s.overlayOpacity);
+    if (ctrl.gridMinScreen && s.gridMinScreen != null) ctrl.gridMinScreen.value = String(s.gridMinScreen);
+    if (ctrl.preloadRange && s.preloadRange != null) ctrl.preloadRange.value = String(s.preloadRange);
+    if (ctrl.pixelPickerToggle && typeof s.pixelPicker === 'boolean') ctrl.pixelPickerToggle.checked = s.pixelPicker;
+    if (ctrl.pixelGridToggle && typeof s.pixelGrid === 'boolean') ctrl.pixelGridToggle.checked = s.pixelGrid;
+    if (ctrl.colorizeToggle && typeof s.colorize === 'boolean') ctrl.colorizeToggle.checked = s.colorize;
+}
+
+function areSettingsEqual(a, b) {
+    if (!a || !b) return false;
+    return (
+        a.zoomSnap === b.zoomSnap &&
+        a.sampleStep === b.sampleStep &&
+        a.overlayOpacity === b.overlayOpacity &&
+        a.gridMinScreen === b.gridMinScreen &&
+        a.preloadRange === b.preloadRange &&
+        a.pixelPicker === b.pixelPicker &&
+        a.pixelGrid === b.pixelGrid &&
+        a.colorize === b.colorize
+    );
+}
+
+function updateSettingsDirtyState() {
+    if (!isSettingsPanelOpen || !panelBaseline) {
+        settingsDirty = false;
+    } else {
+        settingsDirty = !areSettingsEqual(getSettingsFromControls(), panelBaseline);
+    }
+    if (ctrl.applyBtn) ctrl.applyBtn.dataset.dirty = settingsDirty ? '1' : '';
+    if (ctrl.controlPanel) ctrl.controlPanel.classList.toggle('has-dirty', settingsDirty);
+    if (ctrl.undoBtn) ctrl.undoBtn.disabled = !panelSnapshot || areSettingsEqual(getSettingsFromControls(), panelSnapshot);
+}
 
 // ベース URL
 const BASE_TILE_HOST = 'https://hb-raspi1.wplaceoki.com/okimap/img';
@@ -385,13 +442,18 @@ function createTileLayerForStamp(stamp) {
   // override createTile to use the stamp captured by closure
   const originalCreateTile = layer.createTile.bind(layer);
   layer.createTile = function (coords, done) {
-    const { tilesX, tilesY } = getTileRangeForZoom(coords.z);
-    if (coords.x < 0 || coords.y < 0 || coords.x >= tilesX || coords.y >= tilesY) {
+    const tileZoom = Math.min(coords.z, NATIVE_MAX);
+    const scale = Math.pow(2, coords.z - tileZoom);
+    const tileX = Math.floor(coords.x / scale);
+    const tileY = Math.floor(coords.y / scale);
+
+    const { tilesX, tilesY } = getTileRangeForZoom(tileZoom);
+    if (tileX < 0 || tileY < 0 || tileX >= tilesX || tileY >= tilesY) {
       const tile = document.createElement('img');
       setTimeout(done, 0);
       return tile;
     }
-    const tileUrl = buildTileUrlForStamp(stamp, coords.z, coords.x, coords.y);
+    const tileUrl = buildTileUrlForStamp(stamp, tileZoom, tileX, tileY);
     if (!tileUrl) {
       const tile = document.createElement('img');
       setTimeout(done, 0);
@@ -605,6 +667,12 @@ function applySettings(opts = {}) {
     });
 
     drawPixelGrid();
+
+    if (opts.commit !== false) {
+        appliedSettings = getSettingsFromControls();
+        if (isSettingsPanelOpen) panelBaseline = { ...appliedSettings };
+    }
+    updateSettingsDirtyState();
 }
 
 // ズーム情報更新
@@ -1098,9 +1166,37 @@ ctrl.pixelPickerToggle?.addEventListener('change', () => {
     }
 });
 
+const settingsInputs = [
+    ctrl.zoomSnap,
+    ctrl.sampleStep,
+    ctrl.overlayOpacity,
+    ctrl.gridMinScreen,
+    ctrl.preloadRange,
+    ctrl.pixelPickerToggle,
+    ctrl.pixelGridToggle,
+    ctrl.colorizeToggle
+];
+
+for (const el of settingsInputs) {
+    if (!el) continue;
+    el.addEventListener('input', updateSettingsDirtyState);
+    el.addEventListener('change', updateSettingsDirtyState);
+}
+
 // Apply / Fit ボタン
 ctrl.applyBtn?.addEventListener('click', () => {
     try { applySettings(); } catch (err) { alert('設定適用エラー: ' + err.message); }
+});
+ctrl.undoBtn?.addEventListener('click', () => {
+    if (!panelSnapshot) return;
+    const target = { ...panelSnapshot };
+    setControlsFromSettings(target);
+    try {
+        applySettings();
+        updateSettingsDirtyState();
+    } catch (err) {
+        alert('設定復元エラー: ' + err.message);
+    }
 });
 ctrl.fitBtn?.addEventListener('click', () => {
     const southWest = map.unproject([0, IMG_H], NATIVE_MAX);
@@ -1310,8 +1406,25 @@ ctrl.settingsBtn?.addEventListener('click', () => {
     const panel = ctrl.controlPanel;
     if (!panel) return;
     const isHidden = panel.classList.contains('hidden');
-    panel.classList.toggle('hidden');
-    ctrl.settingsBtn.setAttribute('aria-expanded', String(!isHidden));
+    if (isHidden) {
+        panel.classList.remove('hidden');
+        isSettingsPanelOpen = true;
+        panelSnapshot = getSettingsFromControls();
+        panelBaseline = { ...panelSnapshot };
+        updateSettingsDirtyState();
+        ctrl.settingsBtn.setAttribute('aria-expanded', 'true');
+        return;
+    }
+    if (settingsDirty) {
+        ctrl.applyBtn?.focus();
+        return;
+    }
+    panel.classList.add('hidden');
+    isSettingsPanelOpen = false;
+    panelSnapshot = null;
+    panelBaseline = null;
+    updateSettingsDirtyState();
+    ctrl.settingsBtn.setAttribute('aria-expanded', 'false');
 });
 
 ctrl.infoBtn?.addEventListener('click', () => {

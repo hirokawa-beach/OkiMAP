@@ -9,12 +9,7 @@
   <link rel="preconnect" href="https://hb-raspi1.wplaceoki.com" crossorigin>
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-  <link rel="preload" as="style" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" crossorigin>
-  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" crossorigin>
-  <link rel="preload" as="style" href="style.css">
-  <link rel="stylesheet" href="style.css">
   <link href="https://fonts.googleapis.com/css2?family=Manrope:wght@400;500;600;700&family=Space+Grotesk:wght@500;600;700&display=swap" rel="stylesheet">
-  <link rel="stylesheet" href="style.css">
   <link rel="canonical" href="https://okimap.wplaceoki.com/" />
   <meta property="og:image" content="https://okimap.wplaceoki.com/img/ogp.png" />
   <meta property="og:image:width" content="1200" />
@@ -24,6 +19,8 @@
   <meta property="og:url" content="https://okimap.wplaceoki.com/" />
   <meta property="og:type" content="website" />
   <meta name="twitter:card" content="summary_large_image" />
+  <link rel="stylesheet" href="style.css">
+  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" crossorigin>
 </head>
 <body>
   <div id="map"></div>
@@ -43,7 +40,7 @@
   <div class="panel hidden" id="controlPanel" role="dialog" aria-modal="true" aria-label="表示設定">
     <div style="display:flex; justify-content:space-between; align-items:center;">
       <strong>表示設定</strong>
-      <span class="hint" style="font-size:12px; color:#666;">閉じるには⚙️をもう一度押してください</span>
+      <span class="hint" style="font-size:12px; color:#666;">⚙️で閉じ(変更がある場合は「設定を適用」後)</span>
     </div>
 
     <div style="margin-top:8px; display:flex; gap:8px; align-items:center; flex-wrap:wrap;">
@@ -91,6 +88,7 @@
 
     <div class="row" style="margin-top:12px;">
       <button id="applyBtn">設定を適用</button>
+      <button id="undoBtn">元に戻す</button>
       <button id="fitBtn">全体表示</button>
     </div>
 
@@ -170,7 +168,10 @@
     <input id="dateSelect" type="date" aria-label="日付を選択">
     <span id="timeLabel" class="time-label">--:--</span>
     <button id="nextDate" class="date-btn" title="翌日">▶</button>
-    <button id="preloadBtn" class="small-btn" title="前後の日時を先読み">📥先読み</button>
+    <button id="preloadBtn" class="small-btn" title="前後の日時を先読み">
+      <span class="preload-icon">📥</span>
+      <span class="preload-text">先読み</span>
+    </button>
   </div>
 
   <!-- スライダー -->
@@ -197,6 +198,6 @@
 
   <!-- Leaflet JS -->
   <script defer src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js" crossorigin></script>
-  <script defer src="map.min.js"></script>
+  <script defer src="map.js"></script>
 </body>
 </html>

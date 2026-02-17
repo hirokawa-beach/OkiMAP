@@ -212,6 +212,7 @@ function clamp(v, min, max) {
   return Math.max(min, Math.min(max, v));
 }
 
+
 function getVisibleTileRange(z) {
   if (!map) return null;
   const bounds = map.getPixelBounds(z);
@@ -1387,7 +1388,7 @@ function updatePreloadInfo(text) {
 function finishPreload(runId, message) {
   if (runId !== preloadRunId) return;
   isPreloading = false;
-  if (ctrl.preloadBtn) ctrl.preloadBtn.textContent = "先読み";
+  if (ctrl.preloadBtn) ctrl.preloadBtn.textContent = "📥先読み";
   updatePreloadInfo(message || "");
 }
 
@@ -1400,7 +1401,7 @@ function cancelPreload() {
   }
   resetPreloadQueue();
   isPreloading = false;
-  if (ctrl.preloadBtn) ctrl.preloadBtn.textContent = "先読み";
+  if (ctrl.preloadBtn) ctrl.preloadBtn.textContent = "📥先読み";
   updatePreloadInfo("先読み停止");
 }
 

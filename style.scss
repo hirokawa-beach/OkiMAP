@@ -410,6 +410,28 @@ button:active { transform: translateY(1px); }
   font-size:13px;
 }
 
+/* custom attribution (bottom-right) */
+.custom-attribution {
+  position: fixed;
+  right: 6px;
+  bottom: 14px;
+  z-index: 2001;
+  font-size: 11px;
+  color: #333;
+  background: rgba(255, 255, 255, 0.9);
+  padding: 2px 6px;
+  border-radius: 4px;
+  line-height: 1.2;
+  color: blue;
+}
+.custom-attribution a {
+  color: inherit;
+  text-decoration: none;
+}
+.custom-attribution a:hover {
+  text-decoration: underline;
+}
+
 /* color swatch */
 .color-swatch {
   width:36px; height:36px; border-radius:6px; border:1px solid rgba(0,0,0,0.06);
@@ -424,14 +446,6 @@ button:active { transform: translateY(1px); }
   position:absolute; border:2px solid $accent-color; box-sizing:border-box; pointer-events:none; z-index:1160;
 }
 
-/* Leaflet controls above overlay */
-.leaflet-control-container,
-.leaflet-top,
-.leaflet-bottom,
-.leaflet-control,
-.leaflet-control-attribution {
-  z-index: 1200;
-}
 
 /* tile pixelated helper (still available) */
 .tile-pixelated .leaflet-tile {
@@ -549,6 +563,7 @@ button:active { transform: translateY(1px); }
   .credits {
     grid-template-columns: 1fr;
   }
+
 }
 
 @media (max-width: 420px) {

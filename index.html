@@ -1,147 +1,319 @@
 <!doctype html>
 <html lang="ja">
-<head>
-  <meta charset="utf-8" />
-  <meta name="viewport" content="width=device-width,initial-scale=1" />
-  <title>OkiMAP(Wplace沖ノ鳥島アーカイブ)</title>
-  <!-- Leaflet の CSS -->
-  <link rel="preconnect" href="https://unpkg.com" crossorigin>
-  <link rel="preconnect" href="https://hb-raspi1.wplaceoki.com" crossorigin>
-  <link rel="preconnect" href="https://fonts.googleapis.com">
-  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-  <link rel="canonical" href="https://okimap.wplaceoki.com/" />
-  <meta property="og:image" content="https://okimap.wplaceoki.com/img/ogp.png" />
-  <link rel="preload" as="style"
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width,initial-scale=1" />
+    <title>OkiMAP(Wplace沖ノ鳥島アーカイブ)</title>
+    <!-- Leaflet の CSS -->
+    <link rel="preconnect" href="https://unpkg.com" crossorigin />
+    <link rel="preconnect" href="https://hb-raspi1.wplaceoki.com" crossorigin />
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link rel="canonical" href="https://okimap.wplaceoki.com/" />
+    <meta
+      property="og:image"
+      content="https://okimap.wplaceoki.com/img/ogp_new.png"
+    />
+    <link
+      rel="preload"
+      as="style"
       href="https://fonts.googleapis.com/css2?family=Manrope:wght@400;500;600;700&family=Space+Grotesk:wght@500;600;700&display=swap"
-      onload="this.onload=null;this.rel='stylesheet'">
-  <noscript>
-    <link rel="stylesheet"
-          href="https://fonts.googleapis.com/css2?family=Manrope:wght@400;500;600;700&family=Space+Grotesk:wght@500;600;700&display=swap">
-  </noscript>
-  <meta name="description" content="OkiMAPはwplace.liveの沖ノ鳥島周辺を、タイムスタンプ付きタイルで日付ごとに閲覧できるアーカイブマップです。">
-  <meta property="og:image:width" content="1200" />
-  <meta property="og:image:height" content="630" />
-  <meta property="og:title" content="OkiMAP(Wplace沖ノ鳥島アーカイブ)" />
-  <meta property="og:description" content="Wplaceの沖ノ鳥近海のタイムスタンプ付きタイルを表示し、ピクセル選択やオーバーレイでアーカイブを楽に閲覧できます。" />
-  <meta property="og:url" content="https://okimap.wplaceoki.com/" />
-  <meta property="og:type" content="website" />
-  <meta name="twitter:card" content="summary_large_image" />
-  <link rel="stylesheet" href="style.css">
-  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" crossorigin>
-</head>
-<body>
-  <div id="map"></div>
-  <div id="loadingOverlay" aria-live="polite" aria-busy="true">
-    <div class="loading-card">
-      <div class="spinner" role="status" aria-label="読み込み中"></div>
-      <div class="loading-text">画像取得中...</div>
+      onload="
+        this.onload = null;
+        this.rel = 'stylesheet';
+      "
+    />
+    <noscript>
+      <link
+        rel="stylesheet"
+        href="https://fonts.googleapis.com/css2?family=Manrope:wght@400;500;600;700&family=Space+Grotesk:wght@500;600;700&display=swap"
+      />
+    </noscript>
+    <meta
+      name="description"
+      content="OkiMAPはwplace.liveの沖ノ鳥島周辺を、タイムスタンプ付きタイルで日付ごとに閲覧できるアーカイブマップです。"
+    />
+    <meta property="og:image:width" content="1200" />
+    <meta property="og:image:height" content="630" />
+    <meta property="og:title" content="OkiMAP(Wplace沖ノ鳥島アーカイブ)" />
+    <meta
+      property="og:description"
+      content="Wplaceの沖ノ鳥近海のタイムスタンプ付きタイルを表示し、ピクセル選択やオーバーレイでアーカイブを楽に閲覧できます。"
+    />
+    <meta property="og:url" content="https://okimap.wplaceoki.com/" />
+    <meta property="og:type" content="website" />
+    <meta name="twitter:card" content="summary_large_image" />
+    <link rel="stylesheet" href="style.css" />
+    <link
+      rel="stylesheet"
+      href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"
+      crossorigin
+    />
+  </head>
+  <body>
+    <div id="map"></div>
+    <div id="loadingOverlay" aria-live="polite" aria-busy="true">
+      <div class="loading-card">
+        <div class="spinner" role="status" aria-label="読み込み中"></div>
+        <div class="loading-text">画像取得中...</div>
+      </div>
     </div>
-  </div>
 
-  <!-- 設定ボタン -->
-  <button id="settingsBtn" class="small-btn" aria-haspopup="dialog" aria-expanded="false" title="設定">⚙️</button>
-  <!-- インフォメーション / 更新情報ボタン -->
-  <button id="infoBtn" class="small-btn" aria-haspopup="dialog" aria-expanded="false" title="インフォメーション">ℹ️</button>
-  <button id="updatesBtn" class="small-btn" aria-haspopup="dialog" aria-expanded="false" title="更新情報">📝</button>
+    <!-- 設定ボタン -->
+    <button
+      id="settingsBtn"
+      class="small-btn"
+      aria-haspopup="dialog"
+      aria-expanded="false"
+      title="設定"
+    >
+      ⚙️
+    </button>
+    <!-- インフォメーション / 更新情報ボタン -->
+    <button
+      id="infoBtn"
+      class="small-btn"
+      aria-haspopup="dialog"
+      aria-expanded="false"
+      title="インフォメーション"
+    >
+      ℹ️
+    </button>
+    <button
+      id="updatesBtn"
+      class="small-btn"
+      aria-haspopup="dialog"
+      aria-expanded="false"
+      title="更新情報"
+    >
+      📝
+    </button>
 
-  <div class="panel hidden" id="controlPanel" role="dialog" aria-modal="true" aria-label="表示設定">
-    <div style="display:flex; justify-content:space-between; align-items:center;">
-      <strong>表示設定</strong>
-      <span class="hint" style="font-size:12px; color:#666;">⚙️で閉じ(変更がある場合は「設定を適用」後)</span>
-    </div>
+    <div
+      class="panel hidden"
+      id="controlPanel"
+      role="dialog"
+      aria-modal="true"
+      aria-label="表示設定"
+    >
+      <div
+        style="
+          display: flex;
+          justify-content: space-between;
+          align-items: center;
+        "
+      >
+        <strong>表示設定</strong>
+        <span class="hint" style="font-size: 12px; color: #666"
+          >⚙️で閉じ(変更がある場合は「設定を適用」後)</span
+        >
+      </div>
 
-    <div style="margin-top:8px; display:flex; gap:8px; align-items:center; flex-wrap:wrap;">
-      <div class="pill">ネイティブ max: 7</div>
-      <div class="pill">表示上 maxZoom: 12</div>
-    </div>
+      <div
+        style="
+          margin-top: 8px;
+          display: flex;
+          gap: 8px;
+          align-items: center;
+          flex-wrap: wrap;
+        "
+      >
+        <div class="pill">ネイティブ max: 7</div>
+        <div class="pill">表示上 maxZoom: 12</div>
+      </div>
 
-    <div class="row" style="margin-top:12px;">
-      <label style="flex:0.5">
-        ズーム率きざみ
-        <select id="zoomSnap">
-          <option value="1">1</option>
-          <option value="0.5">0.5</option>
-          <!-- <option value="0.25">0.25</option>
+      <div class="row" style="margin-top: 12px">
+        <label style="flex: 0.5">
+          ズーム率きざみ
+          <select id="zoomSnap">
+            <option value="1">1</option>
+            <option value="0.5">0.5</option>
+            <!-- <option value="0.25">0.25</option>
           <option value="0.1">0.1</option> -->
-        </select>
+          </select>
+        </label>
+      </div>
+
+      <label
+        style="margin-top: 8px; display: flex; gap: 8px; align-items: center"
+      >
+        <input type="checkbox" id="pixelPickerToggle" /> ピクセル選択モード
       </label>
+      <label
+        style="margin-top: 8px; display: flex; gap: 8px; align-items: center"
+      >
+        <input type="checkbox" id="pixelGridToggle" />
+        ピクセルグリッドを表示（zoom ≥ 8 のとき）
+      </label>
+
+      <label
+        style="margin-top: 6px; display: flex; gap: 8px; align-items: center"
+      >
+        <input type="checkbox" id="colorizeToggle" checked />
+        ピクセル色でオーバーレイ（zoom ≥ 8 のとき）
+      </label>
+
+      <div class="row" style="margin-top: 8px">
+        <label style="flex: 1"
+          >サンプリング step<input
+            type="number"
+            id="sampleStep"
+            value="1"
+            min="1"
+            style="width: 80px; margin-left: 6px"
+        /></label>
+        <label style="flex: 1"
+          >不透明度
+          <input
+            type="range"
+            id="overlayOpacity"
+            min="0"
+            max="1"
+            step="0.05"
+            value="1.0"
+        /></label>
+      </div>
+
+      <label style="margin-top: 8px">
+        最小スクリーン間隔 (px)
+        <input
+          type="number"
+          id="gridMinScreen"
+          value="1"
+          min="1"
+          style="width: 80px; margin-left: 8px"
+        />
+      </label>
+
+      <label style="margin-top: 8px">
+        先読み範囲 (前後の件数)
+        <input
+          type="number"
+          id="preloadRange"
+          value="30"
+          min="0"
+          max="300"
+          style="width: 80px; margin-left: 8px"
+        />
+      </label>
+
+      <div class="row" style="margin-top: 12px">
+        <button id="applyBtn">設定を適用</button>
+        <button id="undoBtn">元に戻す</button>
+        <button id="fitBtn">全体表示</button>
+      </div>
+
+      <div class="hint" style="margin-top: 12px">
+        - オーバーレイ／グリッドはデフォルト zoom ≥ 8 のとき描画します。<br />
+      </div>
     </div>
 
-    <label style="margin-top:8px; display:flex; gap:8px; align-items:center;">
-      <input type="checkbox" id="pixelPickerToggle" /> ピクセル選択モード
-    </label>
-    <label style="margin-top:8px; display:flex; gap:8px; align-items:center;">
-      <input type="checkbox" id="pixelGridToggle" /> ピクセルグリッドを表示（zoom ≥ 8 のとき）
-    </label>
-
-    <label style="margin-top:6px; display:flex; gap:8px; align-items:center;">
-      <input type="checkbox" id="colorizeToggle" checked /> ピクセル色でオーバーレイ（zoom ≥ 8 のとき）
-    </label>
-
-    <div class="row" style="margin-top:8px;">
-      <label style="flex:1">サンプリング step<input type="number" id="sampleStep" value="1" min="1" style="width:80px; margin-left:6px;" /></label>
-      <label style="flex:1">不透明度 <input type="range" id="overlayOpacity" min="0" max="1" step="0.05" value="1.0" /></label>
-    </div>
-
-    <label style="margin-top:8px">
-      最小スクリーン間隔 (px)
-      <input type="number" id="gridMinScreen" value="1" min="1" style="width:80px; margin-left:8px;" />
-    </label>
-
-    <label style="margin-top:8px">
-      先読み範囲 (前後の件数)
-      <input type="number" id="preloadRange" value="30" min="0" max="300" style="width:80px; margin-left:8px;" />
-    </label>
-
-    <div class="row" style="margin-top:12px;">
-      <button id="applyBtn">設定を適用</button>
-      <button id="undoBtn">元に戻す</button>
-      <button id="fitBtn">全体表示</button>
-    </div>
-
-    <div class="hint" style="margin-top:12px;">
-      - オーバーレイ／グリッドはデフォルト zoom ≥ 8 のとき描画します。<br>
-    </div>
-  </div>
-
-  <div class="panel hidden" id="infoPanel" role="dialog" aria-modal="true" aria-label="インフォメーション">
-    <div style="display:flex; justify-content:space-between; align-items:center;">
-      <strong>インフォメーション</strong>
-      <span class="hint" style="font-size:12px; color:#666;">閉じるにはℹ️をもう一度押してください</span>
-    </div>
-    <div class="info-section">
-      <h4>OkiMAP について</h4>
-      <p>OkiMAP は、<a href="https://wplace.live/" target="_blank" rel="noopener noreferrer">wplace.live</a>における沖ノ鳥島周辺の遷移を一日単位に閲覧できるアーカイブマップです。</p>
-    </div>
-    <div class="info-section">
-      <h4>操作方法</h4>
-      <p class="hint" style="margin:6px 0 4px;">PC</p>
-      <ul>
-        <li>左ドラッグ：地図を移動</li>
-        <li>ホイール / + -：ズーム</li>
-        <li>← →：日時移動</li>
-        <li>r：全体表示（フィット）</li>
-        <li>ピクセル選択モードON：クリックで色を取得</li>
-      </ul>
-      <p class="hint" style="margin:8px 0 4px;">スマホ</p>
-      <ul>
-        <li>1本指ドラッグ：地図を移動</li>
-        <li>2本指ピンチ：ズーム</li>
-        <li>ピクセル選択モードON：タップで色を取得</li>
-      </ul>
-    </div>
-    <div class="info-section">
-      <h4>協力者の方々(敬称略)</h4>
-      <div class="credits">
-        <div class="credit-card">
-          <img class="credit-icon" src="img/ultimate_icon.png" alt="ultimate_1113">
-          <div class="credit-body">
-            <div class="credit-name">ultimate_1113</div>
-            <div class="credit-title">wplace沖ノ鳥島開発鯖 道路公社主任</div>
-            <div class="credit-role">js等のチェック・アドバイスをはじめ、大変お世話になりました。</div>
+    <div
+      class="panel hidden"
+      id="infoPanel"
+      role="dialog"
+      aria-modal="true"
+      aria-label="インフォメーション"
+    >
+      <div
+        style="
+          display: flex;
+          justify-content: space-between;
+          align-items: center;
+        "
+      >
+        <strong>インフォメーション</strong>
+        <span class="hint" style="font-size: 12px; color: #666"
+          >閉じるにはℹ️をもう一度押してください</span
+        >
+      </div>
+      <div class="info-section">
+        <h4>OkiMAP について</h4>
+        <p>
+          OkiMAP は、<a
+            href="https://wplace.live/"
+            target="_blank"
+            rel="noopener noreferrer"
+            >wplace.live</a
+          >における沖ノ鳥島周辺の遷移を一日単位に閲覧できるアーカイブマップです。
+        </p>
+      </div>
+      <div class="info-section">
+        <h4>操作方法</h4>
+        <p class="hint" style="margin: 6px 0 4px">PC</p>
+        <ul>
+          <li>左ドラッグ：地図を移動</li>
+          <li>ホイール / + -：ズーム</li>
+          <li>← →：日時移動</li>
+          <li>r：全体表示（フィット）</li>
+          <li>ピクセル選択モードON：クリックで色を取得</li>
+        </ul>
+        <p class="hint" style="margin: 8px 0 4px">スマホ</p>
+        <ul>
+          <li>1本指ドラッグ：地図を移動</li>
+          <li>2本指ピンチ：ズーム</li>
+          <li>ピクセル選択モードON：タップで色を取得</li>
+        </ul>
+      </div>
+      <div class="info-section">
+        <h4>開発者</h4>
+        <div class="credits">
+          <div class="credit-card">
+            <img class="credit-icon" src="img/beach.jpg" alt="ひろかわびーち" />
+            <div class="credit-body">
+              <div class="credit-name">ひろかわびーち</div>
+              <div class="credit-title">Wplace沖ノ鳥島開発鯖 技術局主任</div>
+              <div class="credit-role">
+                アーカイブ取得した画像の最適化、画像取得機器の運用等
+              </div>
+              <div class="social-links">
+                <a
+                  class="social-link"
+                  href="https://x.com/Hirokawa_beach"
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  aria-label="ひろかわびーちのX"
+                >
+                  <svg viewBox="0 0 24 24" aria-hidden="true">
+                    <path
+                      d="M23.643 4.937c-.835.37-1.732.62-2.675.732a4.673 4.673 0 0 0 2.048-2.574 9.27 9.27 0 0 1-2.955 1.13 4.64 4.64 0 0 0-7.905 4.232A13.18 13.18 0 0 1 1.671 3.149a4.637 4.637 0 0 0 1.44 6.186 4.583 4.583 0 0 1-2.103-.58v.06a4.644 4.644 0 0 0 3.72 4.55 4.66 4.66 0 0 1-2.095.08 4.646 4.646 0 0 0 4.332 3.22 9.312 9.312 0 0 1-5.766 1.987c-.375 0-.746-.022-1.11-.065a13.138 13.138 0 0 0 7.116 2.086c8.543 0 13.216-7.08 13.216-13.215 0-.201-.004-.402-.013-.602a9.456 9.456 0 0 0 2.323-2.404z"
+                    />
+                  </svg>
+                </a>
+                <a
+                  class="social-link"
+                  href="https://github.com/hirokawa-beach"
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  aria-label="ひろかわびーちのGitHub"
+                >
+                  <svg viewBox="0 0 24 24" aria-hidden="true">
+                    <path
+                      d="M12 0C5.37 0 0 5.37 0 12c0 5.3 3.438 9.8 8.205 11.385.6.113.82-.26.82-.577 0-.285-.01-1.04-.016-2.04-3.338.726-4.042-1.61-4.042-1.61-.546-1.38-1.333-1.75-1.333-1.75-1.09-.745.083-.73.083-.73 1.205.086 1.84 1.24 1.84 1.24 1.07 1.834 2.806 1.304 3.492.997.108-.776.42-1.304.763-1.604-2.665-.304-5.466-1.334-5.466-5.934 0-1.312.47-2.384 1.235-3.222-.124-.303-.536-1.523.117-3.176 0 0 1.008-.322 3.3 1.23a11.52 11.52 0 0 1 3.003-.404 11.5 11.5 0 0 1 3.004.404c2.29-1.552 3.296-1.23 3.296-1.23.654 1.653.242 2.873.12 3.176.77.838 1.234 1.91 1.234 3.222 0 4.61-2.804 5.628-5.475 5.924.43.37.814 1.104.814 2.226 0 1.606-.014 2.898-.014 3.293 0 .32.218.694.825.576C20.565 21.796 24 17.298 24 12c0-6.63-5.37-12-12-12z"
+                    />
+                  </svg>
+                </a>
+              </div>
+            </div>
           </div>
         </div>
-        <!-- <div class="credit-card">
+        <h4>協力者の方々(敬称略)</h4>
+        <div class="credits">
+          <div class="credit-card">
+            <img
+              class="credit-icon"
+              src="img/ultimate_icon.png"
+              alt="ultimate_1113"
+            />
+            <div class="credit-body">
+              <div class="credit-name">ultimate_1113</div>
+              <div class="credit-title">Wplace沖ノ鳥島開発鯖 道路公社主任</div>
+              <div class="credit-role">
+                当サイトのドメインや、js等のチェック・アドバイスなどで大変お世話になりました。
+              </div>
+            </div>
+          </div>
+          <!-- <div class="credit-card">
           <img class="credit-icon" src="assets/credit-placeholder.png" alt="協力者">
           <div class="credit-body">
             <div class="credit-name">（名前）</div>
@@ -149,72 +321,100 @@
             <div class="credit-role">（役割）</div>
           </div>
         </div> -->
+        </div>
       </div>
     </div>
-  </div>
 
-  <div class="panel hidden" id="updatesPanel" role="dialog" aria-modal="true" aria-label="更新情報">
-    <div style="display:flex; justify-content:space-between; align-items:center;">
-      <strong>更新情報</strong>
-      <span class="hint" style="font-size:12px; color:#666;">閉じるには📝をもう一度押してください</span>
-    </div>
-    <div class="info-section">
-      <div class="update-entry">
-        <div class="update-version">v1.0.1 (2025/02/15)</div>
-        <ul class="update-list">
-          <li>背景色をwplaceの海と同色に変更</li>
-          <li>表示の不具合を修正</li>
-        </ul>
+    <div
+      class="panel hidden"
+      id="updatesPanel"
+      role="dialog"
+      aria-modal="true"
+      aria-label="更新情報"
+    >
+      <div
+        style="
+          display: flex;
+          justify-content: space-between;
+          align-items: center;
+        "
+      >
+        <strong>更新情報</strong>
+        <span class="hint" style="font-size: 12px; color: #666"
+          >閉じるには📝をもう一度押してください</span
+        >
       </div>
-      <div class="update-entry">
-        <div class="update-version">v1.0.0 (2025/02/14)</div>
-        <ul class="update-list">
-          <li>OkiMAP仮リリース</li>
-        </ul>
+      <div class="info-section">
+        <div class="update-entry">
+          <div class="update-version">v1.0.2 (2026/06/03)</div>
+          <ul class="update-list">
+            <li>2026/6/2までのデータを追加</li>
+            <li>表示範囲の拡大</li>
+            <li>インフォメーションの追加</li>
+          </ul>
+        </div>
+        <div class="update-entry">
+          <div class="update-version">v1.0.1 (2026/02/15)</div>
+          <ul class="update-list">
+            <li>背景色をwplaceの海と同色に変更</li>
+            <li>表示の不具合を修正</li>
+          </ul>
+        </div>
+        <div class="update-entry">
+          <div class="update-version">v1.0.0 (2026/02/14)</div>
+          <ul class="update-list">
+            <li>OkiMAPリリース</li>
+          </ul>
+        </div>
       </div>
     </div>
-  </div>
 
-  <!-- 日付バー -->
-  <div id="dateBar" aria-label="日付選択バー">
-    <button id="prevDate" class="date-btn" title="前日">◀</button>
-    <!-- カレンダーから日付を選択 -->
-    <input id="dateSelect" type="date" aria-label="日付を選択">
-    <span id="timeLabel" class="time-label">--:--</span>
-    <button id="nextDate" class="date-btn" title="翌日">▶</button>
-    <button id="preloadBtn" class="small-btn" title="前後の日時を先読み">
-      <span class="preload-icon">📥</span>
-      <span class="preload-text">先読み</span>
-    </button>
-  </div>
+    <!-- 日付バー -->
+    <div id="dateBar" aria-label="日付選択バー">
+      <button id="prevDate" class="date-btn" title="前日">◀</button>
+      <!-- カレンダーから日付を選択 -->
+      <input id="dateSelect" type="date" aria-label="日付を選択" />
+      <span id="timeLabel" class="time-label">--:--</span>
+      <button id="nextDate" class="date-btn" title="翌日">▶</button>
+      <button id="preloadBtn" class="small-btn" title="前後の日時を先読み">
+        <span class="preload-icon">📥</span>
+        <span class="preload-text">先読み</span>
+      </button>
+    </div>
 
-  <!-- スライダー -->
-  <div id="dateSliderBar">
-    <input type="range" id="dateSlider" min="0" max="0" step="1" value="0" />
-    <div id="dateSliderInfo" class="hint">0 / 0</div>
-    <div id="preloadInfo" class="hint"></div>
-  </div>
+    <!-- スライダー -->
+    <div id="dateSliderBar">
+      <input type="range" id="dateSlider" min="0" max="0" step="1" value="0" />
+      <div id="dateSliderInfo" class="hint">0 / 0</div>
+      <div id="preloadInfo" class="hint"></div>
+    </div>
 
-  <!-- ピクセル情報 -->
-  <div id="pixelOutput" class="pixel-box" style="display:none;">
-    <div class="color-swatch" id="colorSwatch"></div>
-    <div class="pixel-text" id="pixelText">pixel: --, --<br>RGBA: --</div>
-    <button id="copyColor" class="small-btn">HEXをコピー</button>
-    <button id="clearCache" class="small-btn">キャッシュクリア</button>
-  </div>
+    <!-- ピクセル情報 -->
+    <div id="pixelOutput" class="pixel-box" style="display: none">
+      <div class="color-swatch" id="colorSwatch"></div>
+      <div class="pixel-text" id="pixelText">pixel: --, --<br />RGBA: --</div>
+      <button id="copyColor" class="small-btn">HEXをコピー</button>
+      <button id="clearCache" class="small-btn">キャッシュクリア</button>
+    </div>
 
-  <div class="zoom-info" id="zoomInfo">zoom: --</div>
-  <div class="coords" id="coordsInfo">pixel: -- , --, --, --</div>
-  <div id="customAttribution" class="custom-attribution">
-    <a href="https://leafletjs.com/" target="_blank" rel="noopener noreferrer">Leaflet</a>
-  </div>
+    <div class="zoom-info" id="zoomInfo">zoom: --</div>
+    <div class="coords" id="coordsInfo">pixel: -- , --, --, --</div>
+    <div id="customAttribution" class="custom-attribution">
+      <a href="https://leafletjs.com/" target="_blank" rel="noopener noreferrer"
+        >Leaflet</a
+      >
+    </div>
 
-  <!-- オーバーレイ用キャンバス -->
-  <canvas id="pixelGridCanvas"></canvas>
-  <div id="pixelMarker" class="pixel-marker" style="display:none"></div>
+    <!-- オーバーレイ用キャンバス -->
+    <canvas id="pixelGridCanvas"></canvas>
+    <div id="pixelMarker" class="pixel-marker" style="display: none"></div>
 
-  <!-- Leaflet JS -->
-  <script defer src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js" crossorigin></script>
-  <script defer src="map.js"></script>
-</body>
+    <!-- Leaflet JS -->
+    <script
+      defer
+      src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"
+      crossorigin
+    ></script>
+    <script defer src="map.js"></script>
+  </body>
 </html>

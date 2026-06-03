@@ -9,8 +9,8 @@ const DISPLAY_MAX = 12;
 const RENDER_MODE = "smooth"; // 固定
 
 // 内部固定の元画像サイズ
-const IMG_W = 12000;
-const IMG_H = 10000;
+const IMG_W = 15000;
+const IMG_H = 11000;
 
 // --- タイムスタンプリスト設定 ---
 const TIMESTAMPS_URL = "https://hb-raspi1.wplaceoki.com/okimap/timestamps.txt";

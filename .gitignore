@@ -1,0 +1,7 @@
+server/__pycache__/
+server/*.pyc
+server/.venv/
+server/data/
+server/okimap-api.env
+server/okimap-api.env.example
+

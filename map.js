@@ -683,7 +683,40 @@ function initMap() {
   map.fitBounds(bounds, { maxZoom: DISPLAY_MAX });
 
   updateZoomInfo();
+
+  window.dispatchEvent(new CustomEvent("okimap:map-ready"));
 }
+
+// 共有ピンなど、地図へ独立したレイヤーを追加する機能向けの最小API。
+// LeafletのCRS座標ではなく、アーカイブ元画像のピクセル座標を受け渡す。
+window.OkiMap = Object.freeze({
+  get map() {
+    return map;
+  },
+  isReady() {
+    return ensureMapReady();
+  },
+  latLngToImagePoint(latlng) {
+    if (!map || !latlng) return null;
+    const point = map.project(latlng, NATIVE_MAX);
+    return {
+      x: Math.floor(point.x),
+      y: Math.floor(point.y),
+      inside:
+        point.x >= 0 && point.x < IMG_W && point.y >= 0 && point.y < IMG_H,
+    };
+  },
+  imagePointToLatLng(x, y) {
+    if (!map || !Number.isFinite(x) || !Number.isFinite(y)) return null;
+    return map.unproject([x, y], NATIVE_MAX);
+  },
+  disablePixelPicker() {
+    if (!ctrl.pixelPickerToggle) return;
+    ctrl.pixelPickerToggle.checked = false;
+    ctrl.pixelPickerToggle.dispatchEvent(new Event("change"));
+    pixelMarker.style.display = "none";
+  },
+});
 
 function ensureMapReady() {
   return !!map && isMapReady;
@@ -1657,6 +1690,14 @@ ctrl.updatesBtn?.addEventListener("click", () => {
 // キーボードショートカット
 window.addEventListener("keydown", (ev) => {
   if (!map) return;
+  const target = ev.target;
+  if (
+    target instanceof HTMLInputElement ||
+    target instanceof HTMLTextAreaElement ||
+    target instanceof HTMLSelectElement ||
+    target?.isContentEditable
+  )
+    return;
   if (ev.key === "+" || ev.key === "=") map.zoomIn();
   if (ev.key === "-") map.zoomOut();
   if (ev.key === "r") ctrl.fitBtn?.click();

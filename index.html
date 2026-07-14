@@ -88,6 +88,136 @@
     >
       📝
     </button>
+    <button
+      id="collabBtn"
+      class="small-btn"
+      aria-haspopup="dialog"
+      aria-expanded="false"
+      title="共有ピン"
+    >
+      📌
+    </button>
+
+    <aside
+      id="collabPanel"
+      class="collab-panel hidden"
+      role="dialog"
+      aria-label="共有ピン"
+    >
+      <div class="collab-header">
+        <div>
+          <strong>共有ピン</strong>
+          <div id="collabConnection" class="collab-muted">接続を確認中...</div>
+        </div>
+        <button id="collabCloseBtn" class="icon-btn" type="button" aria-label="閉じる">×</button>
+      </div>
+
+      <div id="collabAuth" class="collab-auth">
+        <span id="collabUserLabel">閲覧モード</span>
+        <button id="collabLoginBtn" type="button">Discordでログイン</button>
+        <button id="collabLogoutBtn" class="secondary hidden" type="button">ログアウト</button>
+      </div>
+
+      <div id="collabBrowseView">
+        <div class="collab-toolbar">
+          <label>
+            種別
+            <select id="pinKindFilter">
+              <option value="all">すべて</option>
+              <option value="plan">開発計画</option>
+              <option value="working">作業中</option>
+              <option value="report">報告</option>
+              <option value="question">質問</option>
+            </select>
+          </label>
+          <label>
+            状態
+            <select id="pinStatusFilter">
+              <option value="active">完了以外</option>
+              <option value="all">すべて</option>
+              <option value="open">未着手</option>
+              <option value="in_progress">進行中</option>
+              <option value="review">確認待ち</option>
+              <option value="done">完了</option>
+              <option value="on_hold">保留</option>
+            </select>
+          </label>
+        </div>
+        <button id="startPinBtn" class="collab-primary" type="button" disabled>
+          地図をクリックしてピンを追加
+        </button>
+        <div id="pinModeHint" class="collab-hint hidden">
+          ピンを置く場所を地図上でクリックしてください。
+          <button id="cancelPinModeBtn" class="link-btn" type="button">キャンセル</button>
+        </div>
+        <div id="pinList" class="pin-list" aria-live="polite"></div>
+      </div>
+
+      <form id="pinEditor" class="collab-view hidden">
+        <div class="collab-view-title">
+          <strong id="pinEditorTitle">ピンを追加</strong>
+          <button class="link-btn" data-collab-back type="button">一覧へ戻る</button>
+        </div>
+        <div id="pinCoordinate" class="collab-coordinate">座標: --</div>
+        <div class="collab-form-row">
+          <label>
+            種別
+            <select id="pinKind" required>
+              <option value="plan">開発計画</option>
+              <option value="working">作業中</option>
+              <option value="report">報告</option>
+              <option value="question">質問</option>
+            </select>
+          </label>
+          <label>
+            状態
+            <select id="pinStatus" required>
+              <option value="open">未着手</option>
+              <option value="in_progress">進行中</option>
+              <option value="review">確認待ち</option>
+              <option value="done">完了</option>
+              <option value="on_hold">保留</option>
+            </select>
+          </label>
+        </div>
+        <label>
+          タイトル
+          <input id="pinTitle" type="text" maxlength="80" required />
+        </label>
+        <label>
+          内容
+          <textarea id="pinBody" maxlength="2000" rows="6"></textarea>
+        </label>
+        <label>
+          関連URL（任意）
+          <input id="pinRelatedUrl" type="url" maxlength="500" placeholder="https://..." />
+        </label>
+        <div id="pinEditorError" class="collab-error" role="alert"></div>
+        <div class="collab-actions">
+          <button id="savePinBtn" class="collab-primary" type="submit">保存</button>
+          <button class="secondary" data-collab-back type="button">キャンセル</button>
+        </div>
+      </form>
+
+      <section id="pinDetail" class="collab-view hidden" aria-live="polite">
+        <div class="collab-view-title">
+          <strong>ピンの詳細</strong>
+          <button class="link-btn" data-collab-back type="button">一覧へ戻る</button>
+        </div>
+        <div id="pinDetailContent"></div>
+        <div id="pinDetailActions" class="collab-actions"></div>
+        <div class="comments-section">
+          <h3>コメント</h3>
+          <div id="commentList" class="comment-list"></div>
+          <form id="commentForm" class="comment-form hidden">
+            <textarea id="commentBody" maxlength="1000" rows="3" required placeholder="コメントを入力"></textarea>
+            <div id="commentError" class="collab-error" role="alert"></div>
+            <button class="collab-primary" type="submit">コメントする</button>
+          </form>
+          <p id="commentLoginHint" class="collab-muted">コメントするにはDiscordログインが必要です。</p>
+        </div>
+      </section>
+    </aside>
 
     <div
       class="panel hidden"
@@ -415,6 +545,8 @@
       src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"
       crossorigin
     ></script>
+    <script defer src="collab-config.js"></script>
     <script defer src="map.js"></script>
+    <script defer src="collab.js"></script>
   </body>
 </html>

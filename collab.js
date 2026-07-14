@@ -558,9 +558,9 @@
       }
       dom.commentList.append(article);
     }
-    requestAnimationFrame(() => {
-      dom.commentList.scrollTop = dom.commentList.scrollHeight;
-    });
+    // 読み込み・投稿後はアニメーションせず、その場で末尾を表示する。
+    // requestAnimationFrameを挟むと一瞬先頭が描画されるため同期的に移動する。
+    dom.commentList.scrollTop = dom.commentList.scrollHeight;
   }
 
   async function saveComment(event) {

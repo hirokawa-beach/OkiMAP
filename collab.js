@@ -18,6 +18,7 @@
   const $ = (id) => document.getElementById(id);
   const dom = {
     button: $("collabBtn"),
+    visibilityButton: $("pinVisibilityBtn"),
     panel: $("collabPanel"),
     close: $("collabCloseBtn"),
     connection: $("collabConnection"),
@@ -49,6 +50,7 @@
     commentBody: $("commentBody"),
     commentError: $("commentError"),
     commentLoginHint: $("commentLoginHint"),
+    commentScrollTop: $("commentScrollTopBtn"),
     commentEditor: $("commentEditor"),
     commentEditBody: $("commentEditBody"),
     commentEditorError: $("commentEditorError"),
@@ -71,6 +73,11 @@
     editingPin: null,
     selectedPin: null,
     editingComment: null,
+    display: {
+      pinsVisible: true,
+      pinTitles: true,
+      pinHoverContent: true,
+    },
   };
 
   function el(tag, className, text) {
@@ -151,6 +158,37 @@
     return pixel
       ? `pixel: ${pixel.tileX}, ${pixel.tileY}, ${pixel.inX}, ${pixel.inY}`
       : "pixel: --, --, --, --";
+  }
+
+  function escapeHtml(value) {
+    return String(value).replace(/[&<>"]/g, (character) => ({
+      "&": "&amp;",
+      "<": "&lt;",
+      ">": "&gt;",
+      '"': "&quot;",
+    })[character]);
+  }
+
+  function summarize(value, limit) {
+    const text = String(value || "").replace(/\s+/g, " ").trim();
+    if (!text) return "内容はありません。";
+    return text.length > limit ? `${text.slice(0, limit)}…` : text;
+  }
+
+  function updateVisibilityButton() {
+    const visible = state.display.pinsVisible;
+    dom.visibilityButton.textContent = visible ? "📌 ピン ON" : "📍 ピン OFF";
+    dom.visibilityButton.setAttribute("aria-pressed", String(visible));
+    dom.visibilityButton.title = visible
+      ? "地図上の共有ピンを非表示"
+      : "地図上の共有ピンを表示";
+    dom.visibilityButton.classList.toggle("is-off", !visible);
+  }
+
+  function applyDisplaySettings(settings) {
+    state.display = { ...state.display, ...(settings || {}) };
+    updateVisibilityButton();
+    renderMarkers(filteredPins());
   }
 
   function setPanel(open) {
@@ -252,12 +290,16 @@
   function renderMarkers(pins) {
     if (!state.layer || !state.map) return;
     state.layer.clearLayers();
+    if (!state.display.pinsVisible) return;
     for (const pin of pins) {
       const latlng = window.OkiMap.imagePointToLatLng(pin.x, pin.y);
       if (!latlng) continue;
+      const title = state.display.pinTitles
+        ? `<span class="collab-marker-title">${escapeHtml(pin.title)}</span>`
+        : "";
       const icon = L.divIcon({
         className: "collab-marker-wrap",
-        html: `<span class="collab-marker kind-${pin.kind} status-${pin.status}" aria-hidden="true"><span>${KINDS[pin.kind]?.icon || "📌"}</span></span>`,
+        html: `<span class="collab-marker kind-${pin.kind} status-${pin.status}" aria-hidden="true"><span>${KINDS[pin.kind]?.icon || "📌"}</span></span>${title}`,
         iconSize: [34, 42],
         iconAnchor: [17, 39],
       });
@@ -267,8 +309,14 @@
         keyboard: true,
         title: pin.title,
       });
-      const tooltip = el("span", "collab-tooltip", pin.title);
-      marker.bindTooltip(tooltip, { direction: "top", offset: [0, -32] });
+      if (state.display.pinHoverContent) {
+        const tooltip = el("span", "collab-tooltip", summarize(pin.body, 180));
+        marker.bindTooltip(tooltip, {
+          direction: "top",
+          offset: [0, -32],
+          className: "collab-content-tooltip",
+        });
+      }
       marker.on("click", () => {
         setPanel(true);
         openDetail(pin);
@@ -306,6 +354,11 @@
       state.map.getPane("collabPins").classList.add("leaflet-collab-pane");
     }
     state.layer = L.layerGroup().addTo(state.map);
+    state.display = {
+      ...state.display,
+      ...(window.OkiMap.getCollabDisplaySettings?.() || {}),
+    };
+    updateVisibilityButton();
     state.map.on("click", onMapClick);
     renderList();
   }
@@ -465,9 +518,11 @@
   function renderComments(comments) {
     dom.commentList.replaceChildren();
     if (!comments.length) {
+      dom.commentScrollTop.classList.add("hidden");
       dom.commentList.append(el("p", "collab-empty", "まだコメントはありません。"));
       return;
     }
+    dom.commentScrollTop.classList.remove("hidden");
     for (const comment of comments) {
       const article = el("article", "comment-item");
       const header = el("div", "comment-header");
@@ -475,7 +530,21 @@
         el("strong", null, profileLabel(profileFor(comment.author_id))),
         el("time", null, formatDate(comment.created_at)),
       );
-      article.append(header, el("p", "comment-body", comment.body));
+      article.append(header);
+      const isLong = comment.body.length > 240 || comment.body.split("\n").length > 5;
+      if (isLong) {
+        const preview = el("p", "comment-body comment-preview", summarize(comment.body, 220));
+        const details = el("details", "comment-details");
+        const summary = el("summary", null, "続きを表示…");
+        details.append(summary, el("p", "comment-body", comment.body));
+        details.addEventListener("toggle", () => {
+          preview.classList.toggle("hidden", details.open);
+          summary.textContent = details.open ? "折りたたむ" : "続きを表示…";
+        });
+        article.append(preview, details);
+      } else {
+        article.append(el("p", "comment-body", comment.body));
+      }
       if (canManage(comment.author_id)) {
         const actions = el("div", "comment-actions");
         const edit = el("button", "link-btn", "編集");
@@ -489,6 +558,9 @@
       }
       dom.commentList.append(article);
     }
+    requestAnimationFrame(() => {
+      dom.commentList.scrollTop = dom.commentList.scrollHeight;
+    });
   }
 
   async function saveComment(event) {
@@ -603,6 +675,22 @@
     dom.cancelPinMode.addEventListener("click", cancelAddMode);
     dom.editor.addEventListener("submit", savePin);
     dom.commentForm.addEventListener("submit", saveComment);
+    dom.visibilityButton.addEventListener("click", () => {
+      window.OkiMap?.setPinsVisible?.(!state.display.pinsVisible);
+    });
+    dom.commentScrollTop.addEventListener("click", () => {
+      dom.commentList.scrollTo({ top: 0, behavior: "smooth" });
+    });
+    const submitOnEnter = (textarea, form) => {
+      textarea.addEventListener("keydown", (event) => {
+        if (event.key !== "Enter" || event.shiftKey || event.isComposing || event.keyCode === 229) return;
+        event.preventDefault();
+        if (form.querySelector("button[type='submit']")?.disabled) return;
+        form.requestSubmit();
+      });
+    };
+    submitOnEnter(dom.commentBody, dom.commentForm);
+    submitOnEnter(dom.commentEditBody, dom.commentEditor);
     dom.commentEditor.addEventListener("submit", saveCommentEdit);
     dom.commentEditorBack.addEventListener("click", closeCommentEditor);
     dom.cancelCommentEdit.addEventListener("click", closeCommentEditor);
@@ -617,6 +705,9 @@
       if (event.key === "Escape" && state.addMode) cancelAddMode();
     });
     window.addEventListener("okimap:map-ready", attachMap);
+    window.addEventListener("okimap:collab-display-change", (event) => {
+      applyDisplaySettings(event.detail);
+    });
   }
 
   async function init() {

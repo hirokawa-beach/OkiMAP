@@ -97,6 +97,15 @@
     >
       📌
     </button>
+    <button
+      id="pinVisibilityBtn"
+      class="small-btn"
+      type="button"
+      aria-pressed="true"
+      title="地図上の共有ピンを非表示"
+    >
+      📌 ピン ON
+    </button>
 
     <aside
       id="collabPanel"
@@ -223,7 +232,10 @@
         <div id="pinDetailContent"></div>
         <div id="pinDetailActions" class="collab-actions"></div>
         <div class="comments-section">
-          <h3>コメント</h3>
+          <div class="comments-heading">
+            <h3>コメント</h3>
+            <button id="commentScrollTopBtn" class="link-btn hidden" type="button">↑ 一番上へ</button>
+          </div>
           <div id="commentList" class="comment-list"></div>
           <form id="commentForm" class="comment-form hidden">
             <textarea id="commentBody" maxlength="1000" rows="3" required placeholder="コメントを入力"></textarea>
@@ -297,6 +309,25 @@
       >
         <input type="checkbox" id="colorizeToggle" checked />
         ピクセル色でオーバーレイ（zoom ≥ 8 のとき）
+      </label>
+
+      <label
+        style="margin-top: 12px; display: flex; gap: 8px; align-items: center"
+      >
+        <input type="checkbox" id="pinVisibilityToggle" checked />
+        共有ピンを地図に表示
+      </label>
+      <label
+        style="margin-top: 6px; display: flex; gap: 8px; align-items: center"
+      >
+        <input type="checkbox" id="pinTitleToggle" checked />
+        ピンのタイトルを常時表示
+      </label>
+      <label
+        style="margin-top: 6px; display: flex; gap: 8px; align-items: center"
+      >
+        <input type="checkbox" id="pinHoverToggle" checked />
+        ピンのホバー時に内容を表示
       </label>
 
       <div class="row" style="margin-top: 8px">

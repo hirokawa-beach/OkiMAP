@@ -641,6 +641,11 @@ button:active {
   box-shadow: 0 10px 30px rgba(12, 18, 32, 0.14); font-size: 18px; cursor: pointer;
 }
 #collabBtn:hover { transform: translateY(-2px); box-shadow: 0 16px 40px rgba(12, 18, 32, 0.18); }
+#pinVisibilityBtn {
+  position: absolute; right: 18px; bottom: 42px; z-index: 1400;
+  min-width: 102px; cursor: pointer; font-weight: 700;
+}
+#pinVisibilityBtn.is-off { opacity: 0.7; filter: grayscale(0.75); }
 .collab-panel {
   position: fixed; z-index: 1500; top: 18px; right: 18px;
   width: min(400px, calc(100vw - 36px)); max-height: calc(100vh - 36px);
@@ -727,17 +732,31 @@ button:active {
 .pin-detail-body, .comment-body { margin: 8px 0; line-height: 1.55; white-space: pre-wrap; overflow-wrap: anywhere; }
 .pin-related-link { display: inline-block; margin-top: 5px; color: #174dcc; font-size: 13px; }
 .comments-section { margin-top: 18px; padding-top: 14px; border-top: 1px solid rgba(12, 18, 32, 0.08); }
-.comments-section h3 { margin: 0 0 10px; font: 700 15px "Space Grotesk", "Manrope", "Segoe UI", Arial, sans-serif; }
-.comment-list { display: grid; gap: 8px; }
+.comments-heading { display: flex; align-items: center; justify-content: space-between; margin-bottom: 10px; }
+.comments-section h3 { margin: 0; font: 700 15px "Space Grotesk", "Manrope", "Segoe UI", Arial, sans-serif; }
+.comment-list {
+  display: grid; gap: 8px; max-height: min(44vh, 460px);
+  overflow-y: auto; scroll-behavior: smooth; padding-right: 3px;
+}
 .comment-item { padding: 9px 10px; border-radius: 9px; background: rgba(12, 18, 32, 0.045); }
 .comment-header { justify-content: space-between; gap: 8px; font-size: 12px; }
 .comment-header time { color: #4a5568; font-size: 11px; }
 .comment-body { font-size: 13px; }
+.comment-details summary { width: fit-content; color: #174dcc; font-size: 12px; cursor: pointer; }
+.comment-details[open] summary { margin-bottom: 5px; }
 .comment-actions { justify-content: flex-end; gap: 5px; }
 .comment-form { margin-top: 10px; }
 .comment-form .collab-primary { margin-top: 7px; }
 .leaflet-collab-pane { z-index: 1170 !important; }
 .collab-marker-wrap { background: transparent; border: 0; }
+.collab-marker-title {
+  position: absolute; left: 39px; top: 7px; width: max-content; max-width: 240px;
+  overflow: hidden; padding: 3px 7px; border: 1px solid rgba(12, 18, 32, 0.14);
+  border-radius: 7px; background: rgba(255, 255, 255, 0.94);
+  box-shadow: 0 2px 7px rgba(12, 18, 32, 0.18); color: #0c1220;
+  font-size: 12px; font-weight: 700; line-height: 1.25; text-overflow: ellipsis;
+  white-space: nowrap; pointer-events: none;
+}
 .collab-marker {
   display: grid; place-items: center; width: 34px; height: 34px;
   border: 3px solid #fff; border-radius: 50% 50% 50% 7px;
@@ -749,7 +768,8 @@ button:active {
 .collab-marker.kind-report { background: #3b82f6; }
 .collab-marker.kind-question { background: #9b59b6; }
 .collab-marker.status-done { filter: grayscale(0.65); opacity: 0.72; }
-.collab-tooltip { font-weight: 700; }
+.collab-tooltip { display: block; max-width: 280px; white-space: normal; overflow-wrap: anywhere; }
+.collab-content-tooltip { padding: 7px 9px; }
 .pin-placement-mode, .pin-placement-mode .leaflet-grab { cursor: crosshair; }
 .mobile-only-btn {
   display: none;
@@ -782,6 +802,7 @@ button:active {
     top: 135px;
   }
   #collabBtn { left: 12px; top: 135px; }
+  #pinVisibilityBtn { right: 12px; bottom: 42px; min-width: 94px; }
   .collab-panel {
     inset: 8px 8px auto 8px;
     width: auto;

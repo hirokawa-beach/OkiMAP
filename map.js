@@ -71,6 +71,9 @@ const ctrl = {
   pixelPickerToggle: document.getElementById("pixelPickerToggle"),
   pixelGridToggle: document.getElementById("pixelGridToggle"),
   colorizeToggle: document.getElementById("colorizeToggle"),
+  pinVisibilityToggle: document.getElementById("pinVisibilityToggle"),
+  pinTitleToggle: document.getElementById("pinTitleToggle"),
+  pinHoverToggle: document.getElementById("pinHoverToggle"),
   applyBtn: document.getElementById("applyBtn"),
   undoBtn: document.getElementById("undoBtn"),
   fitBtn: document.getElementById("fitBtn"),
@@ -113,6 +116,9 @@ function getSettingsFromControls() {
     pixelPicker: !!ctrl.pixelPickerToggle?.checked,
     pixelGrid: !!ctrl.pixelGridToggle?.checked,
     colorize: !!ctrl.colorizeToggle?.checked,
+    pinsVisible: !!ctrl.pinVisibilityToggle?.checked,
+    pinTitles: !!ctrl.pinTitleToggle?.checked,
+    pinHoverContent: !!ctrl.pinHoverToggle?.checked,
   };
 }
 
@@ -134,6 +140,12 @@ function setControlsFromSettings(s) {
     ctrl.pixelGridToggle.checked = s.pixelGrid;
   if (ctrl.colorizeToggle && typeof s.colorize === "boolean")
     ctrl.colorizeToggle.checked = s.colorize;
+  if (ctrl.pinVisibilityToggle && typeof s.pinsVisible === "boolean")
+    ctrl.pinVisibilityToggle.checked = s.pinsVisible;
+  if (ctrl.pinTitleToggle && typeof s.pinTitles === "boolean")
+    ctrl.pinTitleToggle.checked = s.pinTitles;
+  if (ctrl.pinHoverToggle && typeof s.pinHoverContent === "boolean")
+    ctrl.pinHoverToggle.checked = s.pinHoverContent;
 }
 
 function areSettingsEqual(a, b) {
@@ -146,7 +158,10 @@ function areSettingsEqual(a, b) {
     a.preloadRange === b.preloadRange &&
     a.pixelPicker === b.pixelPicker &&
     a.pixelGrid === b.pixelGrid &&
-    a.colorize === b.colorize
+    a.colorize === b.colorize &&
+    a.pinsVisible === b.pinsVisible &&
+    a.pinTitles === b.pinTitles &&
+    a.pinHoverContent === b.pinHoverContent
   );
 }
 
@@ -723,6 +738,18 @@ window.OkiMap = Object.freeze({
     if (!Number.isFinite(x) || !Number.isFinite(y)) return null;
     return toDisplayTileCoords(Math.floor(x), Math.floor(y));
   },
+  getCollabDisplaySettings() {
+    return {
+      pinsVisible: !!ctrl.pinVisibilityToggle?.checked,
+      pinTitles: !!ctrl.pinTitleToggle?.checked,
+      pinHoverContent: !!ctrl.pinHoverToggle?.checked,
+    };
+  },
+  setPinsVisible(visible) {
+    if (!ctrl.pinVisibilityToggle) return;
+    ctrl.pinVisibilityToggle.checked = !!visible;
+    applySettings();
+  },
   disablePixelPicker() {
     if (!ctrl.pixelPickerToggle) return;
     ctrl.pixelPickerToggle.checked = false;
@@ -771,8 +798,15 @@ function applySettings(opts = {}) {
       pixelPicker: !!ctrl.pixelPickerToggle?.checked,
       pixelGrid: !!ctrl.pixelGridToggle?.checked,
       colorize: !!ctrl.colorizeToggle?.checked,
+      pinsVisible: !!ctrl.pinVisibilityToggle?.checked,
+      pinTitles: !!ctrl.pinTitleToggle?.checked,
+      pinHoverContent: !!ctrl.pinHoverToggle?.checked,
     },
   });
+
+  window.dispatchEvent(new CustomEvent("okimap:collab-display-change", {
+    detail: window.OkiMap.getCollabDisplaySettings(),
+  }));
 
   drawPixelGrid();
 
@@ -1350,6 +1384,9 @@ const settingsInputs = [
   ctrl.pixelPickerToggle,
   ctrl.pixelGridToggle,
   ctrl.colorizeToggle,
+  ctrl.pinVisibilityToggle,
+  ctrl.pinTitleToggle,
+  ctrl.pinHoverToggle,
 ];
 
 for (const el of settingsInputs) {
@@ -1663,6 +1700,12 @@ ctrl.updatesBtn?.addEventListener("click", () => {
       ctrl.pixelGridToggle.checked = s.pixelGrid;
     if (ctrl.colorizeToggle && typeof s.colorize === "boolean")
       ctrl.colorizeToggle.checked = s.colorize;
+    if (ctrl.pinVisibilityToggle && typeof s.pinsVisible === "boolean")
+      ctrl.pinVisibilityToggle.checked = s.pinsVisible;
+    if (ctrl.pinTitleToggle && typeof s.pinTitles === "boolean")
+      ctrl.pinTitleToggle.checked = s.pinTitles;
+    if (ctrl.pinHoverToggle && typeof s.pinHoverContent === "boolean")
+      ctrl.pinHoverToggle.checked = s.pinHoverContent;
   } else {
     if (ctrl.preloadRange) ctrl.preloadRange.value = "30";
   }

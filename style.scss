@@ -440,11 +440,12 @@ button:active { transform: translateY(1px); }
 
 /* canvas & marker */
 #pixelGridCanvas {
-  position:absolute; left:0; top:0; pointer-events:none; z-index:1150;
+  position:absolute; left:0; top:0; pointer-events:none;
 }
 .pixel-marker {
-  position:absolute; border:2px solid $accent-color; box-sizing:border-box; pointer-events:none; z-index:1160;
+  position:absolute; border:2px solid $accent-color; box-sizing:border-box; pointer-events:none; z-index:1;
 }
+.pixel-effects-root { position: absolute; left: 0; top: 0; pointer-events: none; }
 
 
 /* tile pixelated helper (still available) */

@@ -199,6 +199,22 @@
         </div>
       </form>
 
+      <form id="commentEditor" class="collab-view hidden">
+        <div class="collab-view-title">
+          <strong>コメントを編集</strong>
+          <button id="commentEditorBackBtn" class="link-btn" type="button">詳細へ戻る</button>
+        </div>
+        <label>
+          コメント
+          <textarea id="commentEditBody" maxlength="1000" rows="6" required></textarea>
+        </label>
+        <div id="commentEditorError" class="collab-error" role="alert"></div>
+        <div class="collab-actions">
+          <button id="saveCommentEditBtn" class="collab-primary" type="submit">保存</button>
+          <button id="cancelCommentEditBtn" class="secondary" type="button">キャンセル</button>
+        </div>
+      </form>
+
       <section id="pinDetail" class="collab-view hidden" aria-live="polite">
         <div class="collab-view-title">
           <strong>ピンの詳細</strong>

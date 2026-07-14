@@ -49,6 +49,12 @@
     commentBody: $("commentBody"),
     commentError: $("commentError"),
     commentLoginHint: $("commentLoginHint"),
+    commentEditor: $("commentEditor"),
+    commentEditBody: $("commentEditBody"),
+    commentEditorError: $("commentEditorError"),
+    saveCommentEdit: $("saveCommentEditBtn"),
+    commentEditorBack: $("commentEditorBackBtn"),
+    cancelCommentEdit: $("cancelCommentEditBtn"),
   };
 
   const state = {
@@ -64,6 +70,7 @@
     pendingPoint: null,
     editingPin: null,
     selectedPin: null,
+    editingComment: null,
   };
 
   function el(tag, className, text) {
@@ -134,6 +141,18 @@
     return !!state.user && (state.user.id === authorId || state.profile?.is_admin);
   }
 
+  function profileLabel(profile) {
+    const name = profile?.display_name || "不明なユーザー";
+    return `${name}${profile?.is_admin ? "（管理者）" : ""}`;
+  }
+
+  function formatPixelCoordinate(x, y) {
+    const pixel = window.OkiMap?.imagePointToDisplayPixel?.(x, y);
+    return pixel
+      ? `pixel: ${pixel.tileX}, ${pixel.tileY}, ${pixel.inX}, ${pixel.inY}`
+      : "pixel: --, --, --, --";
+  }
+
   function setPanel(open) {
     dom.panel.classList.toggle("hidden", !open);
     dom.button.setAttribute("aria-expanded", String(open));
@@ -144,6 +163,7 @@
     dom.browse.classList.toggle("hidden", name !== "browse");
     dom.editor.classList.toggle("hidden", name !== "editor");
     dom.detail.classList.toggle("hidden", name !== "detail");
+    dom.commentEditor.classList.toggle("hidden", name !== "comment-editor");
   }
 
   function setBusy(button, busy, label) {
@@ -222,7 +242,7 @@
       const top = el("span", "pin-list-top");
       top.append(makeBadge(pin), el("span", `status-chip status-${pin.status}`, STATUSES[pin.status]));
       button.append(top, el("strong", "pin-list-title", pin.title));
-      button.append(el("span", "pin-list-meta", `${profileFor(pin.author_id).display_name}・${formatDate(pin.updated_at)}`));
+      button.append(el("span", "pin-list-meta", `${profileLabel(profileFor(pin.author_id))}・${formatDate(pin.updated_at)}`));
       button.addEventListener("click", () => openDetail(pin));
       dom.list.append(button);
     }
@@ -322,7 +342,7 @@
     if (pin) state.pendingPoint = { x: pin.x, y: pin.y };
     dom.editor.reset();
     dom.editorHeading.textContent = pin ? "ピンを編集" : "ピンを追加";
-    dom.coordinate.textContent = `座標: ${state.pendingPoint.x}, ${state.pendingPoint.y}`;
+    dom.coordinate.textContent = formatPixelCoordinate(state.pendingPoint.x, state.pendingPoint.y);
     dom.kind.value = pin?.kind || "plan";
     dom.status.value = pin?.status || "open";
     dom.title.value = pin?.title || "";
@@ -386,8 +406,8 @@
     dom.detailContent.append(el("h2", "pin-detail-title", pin.title));
     if (pin.body) dom.detailContent.append(el("p", "pin-detail-body", pin.body));
     const profile = profileFor(pin.author_id);
-    dom.detailContent.append(el("p", "pin-detail-byline", `${profile.display_name}・${formatDate(pin.created_at)}`));
-    dom.detailContent.append(el("p", "collab-coordinate", `座標: ${pin.x}, ${pin.y}`));
+    dom.detailContent.append(el("p", "pin-detail-byline", `${profileLabel(profile)}・${formatDate(pin.created_at)}`));
+    dom.detailContent.append(el("p", "collab-coordinate", formatPixelCoordinate(pin.x, pin.y)));
     const url = safeUrl(pin.related_url);
     if (url) {
       const link = el("a", "pin-related-link", "関連リンクを開く ↗");
@@ -452,7 +472,7 @@
       const article = el("article", "comment-item");
       const header = el("div", "comment-header");
       header.append(
-        el("strong", null, profileFor(comment.author_id).display_name),
+        el("strong", null, profileLabel(profileFor(comment.author_id))),
         el("time", null, formatDate(comment.created_at)),
       );
       article.append(header, el("p", "comment-body", comment.body));
@@ -495,22 +515,50 @@
     await loadComments(state.selectedPin.id);
   }
 
-  async function editComment(comment) {
-    const body = prompt("コメントを編集", comment.body);
-    if (body == null || !body.trim() || body.trim() === comment.body) return;
-    if (body.trim().length > 1000) {
-      alert("コメントは1000文字以内で入力してください。");
+  function editComment(comment) {
+    if (!canManage(comment.author_id)) return;
+    state.editingComment = comment;
+    dom.commentEditor.reset();
+    dom.commentEditBody.value = comment.body;
+    dom.commentEditorError.textContent = "";
+    showView("comment-editor");
+    dom.commentEditBody.focus();
+  }
+
+  function closeCommentEditor() {
+    state.editingComment = null;
+    dom.commentEditorError.textContent = "";
+    showView(state.selectedPin ? "detail" : "browse");
+  }
+
+  async function saveCommentEdit(event) {
+    event.preventDefault();
+    const comment = state.editingComment;
+    if (!comment || !canManage(comment.author_id)) return;
+    const body = dom.commentEditBody.value.trim();
+    dom.commentEditorError.textContent = "";
+    if (!body) {
+      dom.commentEditorError.textContent = "コメントを入力してください。";
       return;
     }
+    if (body === comment.body) {
+      closeCommentEditor();
+      return;
+    }
+    setBusy(dom.saveCommentEdit, true, "保存中...");
     try {
       await apiRequest(`/comments/${encodeURIComponent(comment.id)}`, {
         method: "PATCH",
-        body: { body: body.trim() },
+        body: { body },
       });
+      state.editingComment = null;
+      showView("detail");
       await loadComments(state.selectedPin.id);
     } catch (error) {
       console.error("Failed to edit comment", error);
-      alert("コメントを編集できませんでした。");
+      dom.commentEditorError.textContent = "コメントを編集できませんでした。";
+    } finally {
+      setBusy(dom.saveCommentEdit, false);
     }
   }
 
@@ -555,6 +603,9 @@
     dom.cancelPinMode.addEventListener("click", cancelAddMode);
     dom.editor.addEventListener("submit", savePin);
     dom.commentForm.addEventListener("submit", saveComment);
+    dom.commentEditor.addEventListener("submit", saveCommentEdit);
+    dom.commentEditorBack.addEventListener("click", closeCommentEditor);
+    dom.cancelCommentEdit.addEventListener("click", closeCommentEditor);
     document.querySelectorAll("[data-collab-back]").forEach((button) => {
       button.addEventListener("click", () => {
         state.editingPin = null;

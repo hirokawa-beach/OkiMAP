@@ -95,6 +95,7 @@ const ctrl = {
 const canvas = document.getElementById("pixelGridCanvas");
 const ctx = canvas.getContext("2d");
 const pixelMarker = document.getElementById("pixelMarker");
+let pixelEffectsRoot = null;
 
 let appliedSettings = null;
 let settingsDirty = false;
@@ -626,6 +627,14 @@ function initMap() {
     fadeAnimation: false,
   });
 
+  // ピクセルオーバーレイはタイルより上、Leafletのマーカーより下に置く。
+  // map外のcanvasにすると、ズーム時に共有ピンまで覆うため専用paneへ収める。
+  const pixelEffectsPane = map.createPane("pixelEffects");
+  pixelEffectsPane.style.zIndex = "550";
+  pixelEffectsPane.style.pointerEvents = "none";
+  pixelEffectsRoot = L.DomUtil.create("div", "pixel-effects-root", pixelEffectsPane);
+  pixelEffectsRoot.append(canvas, pixelMarker);
+
   map.whenReady(() => {
     isMapReady = true;
     updateZoomInfo();
@@ -709,6 +718,10 @@ window.OkiMap = Object.freeze({
   imagePointToLatLng(x, y) {
     if (!map || !Number.isFinite(x) || !Number.isFinite(y)) return null;
     return map.unproject([x, y], NATIVE_MAX);
+  },
+  imagePointToDisplayPixel(x, y) {
+    if (!Number.isFinite(x) || !Number.isFinite(y)) return null;
+    return toDisplayTileCoords(Math.floor(x), Math.floor(y));
   },
   disablePixelPicker() {
     if (!ctrl.pixelPickerToggle) return;
@@ -803,6 +816,12 @@ function resizeCanvasToMap() {
     ? map.getSize()
     : { x: window.innerWidth, y: window.innerHeight };
   const dpr = window.devicePixelRatio || 1;
+  if (pixelEffectsRoot) {
+    L.DomUtil.setPosition(
+      pixelEffectsRoot,
+      map.containerPointToLayerPoint([0, 0]),
+    );
+  }
   canvas.style.width = size.x + "px";
   canvas.style.height = size.y + "px";
   canvas.width = Math.round(size.x * dpr);

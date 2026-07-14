@@ -558,7 +558,6 @@ button:active {
   left: 0;
   top: 0;
   pointer-events: none;
-  z-index: 1150;
 }
 
 .pixel-marker {
@@ -566,7 +565,14 @@ button:active {
   border: 2px solid #ff7a00;
   box-sizing: border-box;
   pointer-events: none;
-  z-index: 1160;
+  z-index: 1;
+}
+
+.pixel-effects-root {
+  position: absolute;
+  left: 0;
+  top: 0;
+  pointer-events: none;
 }
 
 /* tile pixelated helper (still available) */

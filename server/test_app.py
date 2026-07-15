@@ -50,6 +50,8 @@ class CollaborationApiTest(unittest.TestCase):
     def set_user(self, user_id: str):
         user = api.get_user_by_id(user_id)
         api.app.dependency_overrides[api.require_mutating_user] = lambda: user
+        api.app.dependency_overrides[api.require_user] = lambda: user
+        api.app.dependency_overrides[api.optional_user] = lambda: user
 
     def test_pin_comment_and_permissions(self):
         self.assertEqual(self.client.get("/api/pins").json(), [])
@@ -68,6 +70,8 @@ class CollaborationApiTest(unittest.TestCase):
         self.assertEqual(response.status_code, 201, response.text)
         pin = response.json()
         self.assertEqual(pin["author"]["display_name"], "Owner")
+        self.assertEqual(pin["favorite_count"], 0)
+        self.assertFalse(pin["is_favorite"])
 
         bad_payload = {**pin_payload, "x": 15000}
         self.assertEqual(
@@ -90,6 +94,22 @@ class CollaborationApiTest(unittest.TestCase):
         self.assertEqual(response.status_code, 200, response.text)
         self.assertEqual(response.json()["status"], "in_progress")
 
+        self.set_user("other")
+        response = self.client.post(
+            f"/api/pins/{pin['id']}/favorite", headers=ORIGIN_HEADERS
+        )
+        self.assertEqual(response.status_code, 201, response.text)
+        self.assertTrue(response.json()["is_favorite"])
+        self.assertEqual(response.json()["favorite_count"], 1)
+        self.assertTrue(self.client.get("/api/pins").json()[0]["is_favorite"])
+        # 追加は冪等で、お気に入り件数が重複しない。
+        self.assertEqual(
+            self.client.post(
+                f"/api/pins/{pin['id']}/favorite", headers=ORIGIN_HEADERS
+            ).json()["favorite_count"],
+            1,
+        )
+
         self.set_user("owner")
         response = self.client.post(
             f"/api/pins/{pin['id']}/comments",
@@ -98,6 +118,42 @@ class CollaborationApiTest(unittest.TestCase):
         )
         self.assertEqual(response.status_code, 201, response.text)
         comment = response.json()
+
+        self.set_user("other")
+        notifications = self.client.get("/api/notifications").json()
+        self.assertEqual(notifications["unread_count"], 1)
+        self.assertEqual(notifications["notifications"][0]["comment_id"], comment["id"])
+        notification_id = notifications["notifications"][0]["id"]
+        self.assertEqual(
+            self.client.patch(
+                f"/api/notifications/{notification_id}/read", headers=ORIGIN_HEADERS
+            ).status_code,
+            200,
+        )
+        self.assertEqual(self.client.get("/api/notifications").json()["unread_count"], 0)
+        self.assertEqual(
+            self.client.delete(
+                f"/api/pins/{pin['id']}/favorite", headers=ORIGIN_HEADERS
+            ).json()["favorite_count"],
+            0,
+        )
+        response = self.client.post(
+            f"/api/pins/{pin['id']}/comments",
+            json={"body": "確認をお願いします"},
+            headers=ORIGIN_HEADERS,
+        )
+        self.assertEqual(response.status_code, 201, response.text)
+
+        self.set_user("owner")
+        owner_notifications = self.client.get("/api/notifications").json()
+        self.assertEqual(owner_notifications["unread_count"], 1)
+        self.assertEqual(owner_notifications["notifications"][0]["actor_id"], "other")
+        self.assertEqual(
+            self.client.post("/api/notifications/read-all", headers=ORIGIN_HEADERS).json()[
+                "updated_count"
+            ],
+            1,
+        )
 
         self.set_user("other")
         response = self.client.patch(

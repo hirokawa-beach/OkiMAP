@@ -232,7 +232,7 @@ def serialize_author(row: sqlite3.Row) -> dict:
     }
 
 
-def serialize_pin(row: sqlite3.Row) -> dict:
+def serialize_pin(row: sqlite3.Row, is_favorite: bool = False) -> dict:
     return {
         "id": row["id"],
         "x": row["x"],
@@ -247,6 +247,8 @@ def serialize_pin(row: sqlite3.Row) -> dict:
         "created_at": row["created_at"],
         "updated_at": row["updated_at"],
         "comment_count": row["comment_count"] if "comment_count" in row.keys() else 0,
+        "favorite_count": row["favorite_count"] if "favorite_count" in row.keys() else 0,
+        "is_favorite": is_favorite,
     }
 
 
@@ -262,12 +264,32 @@ def serialize_comment(row: sqlite3.Row) -> dict:
     }
 
 
+def serialize_notification(row: sqlite3.Row) -> dict:
+    return {
+        "id": row["id"],
+        "pin_id": row["pin_id"],
+        "pin_title": row["pin_title"],
+        "comment_id": row["comment_id"],
+        "comment_body": row["comment_body"],
+        "actor_id": row["actor_id"],
+        "actor": {
+            "id": row["actor_id"],
+            "display_name": row["actor_name"],
+            "avatar_url": row["actor_avatar"],
+            "is_admin": bool(row["actor_is_admin"]),
+        },
+        "created_at": row["created_at"],
+        "read_at": row["read_at"],
+    }
+
+
 PIN_SELECT = """
 select p.*,
        u.display_name as author_name,
        u.avatar_url as author_avatar,
        u.is_admin as author_is_admin,
-       (select count(*) from comments c where c.pin_id = p.id and c.deleted_at is null) as comment_count
+       (select count(*) from comments c where c.pin_id = p.id and c.deleted_at is null) as comment_count,
+       (select count(*) from favorites f where f.pin_id = p.id) as favorite_count
 from pins p
 join users u on u.discord_id = p.author_id
 """
@@ -279,6 +301,19 @@ select c.*,
        u.is_admin as author_is_admin
 from comments c
 join users u on u.discord_id = c.author_id
+"""
+
+NOTIFICATION_SELECT = """
+select n.*,
+       p.title as pin_title,
+       c.body as comment_body,
+       u.display_name as actor_name,
+       u.avatar_url as actor_avatar,
+       u.is_admin as actor_is_admin
+from notifications n
+join pins p on p.id = n.pin_id
+join comments c on c.id = n.comment_id
+join users u on u.discord_id = n.actor_id
 """
 
 
@@ -399,12 +434,22 @@ def auth_logout(request: Request):
 
 
 @app.get(f"{API_PREFIX}/pins")
-def list_pins() -> list[dict]:
+def list_pins(
+    user: Annotated[dict | None, Depends(optional_user)],
+) -> list[dict]:
     with closing(connect_db()) as connection:
         rows = connection.execute(
             PIN_SELECT + " where p.deleted_at is null order by p.updated_at desc limit 1000"
         ).fetchall()
-    return [serialize_pin(row) for row in rows]
+        favorite_ids = set()
+        if user:
+            favorite_ids = {
+                row["pin_id"]
+                for row in connection.execute(
+                    "select pin_id from favorites where user_id = ?", (user["id"],)
+                ).fetchall()
+            }
+    return [serialize_pin(row, row["id"] in favorite_ids) for row in rows]
 
 
 @app.post(f"{API_PREFIX}/pins", status_code=201)
@@ -481,6 +526,42 @@ def delete_pin(pin_id: str, user: Annotated[dict, Depends(require_mutating_user)
     return Response(status_code=204)
 
 
+@app.post(f"{API_PREFIX}/pins/{{pin_id}}/favorite", status_code=201)
+def add_favorite(
+    pin_id: str,
+    user: Annotated[dict, Depends(require_mutating_user)],
+) -> dict:
+    with closing(connect_db()) as connection:
+        get_active_pin(connection, pin_id)
+        connection.execute(
+            "insert or ignore into favorites (user_id, pin_id, created_at) values (?, ?, ?)",
+            (user["id"], pin_id, now_iso()),
+        )
+        connection.commit()
+        count = connection.execute(
+            "select count(*) as count from favorites where pin_id = ?", (pin_id,)
+        ).fetchone()["count"]
+    return {"pin_id": pin_id, "is_favorite": True, "favorite_count": count}
+
+
+@app.delete(f"{API_PREFIX}/pins/{{pin_id}}/favorite", status_code=200)
+def remove_favorite(
+    pin_id: str,
+    user: Annotated[dict, Depends(require_mutating_user)],
+) -> dict:
+    with closing(connect_db()) as connection:
+        get_active_pin(connection, pin_id)
+        connection.execute(
+            "delete from favorites where user_id = ? and pin_id = ?",
+            (user["id"], pin_id),
+        )
+        connection.commit()
+        count = connection.execute(
+            "select count(*) as count from favorites where pin_id = ?", (pin_id,)
+        ).fetchone()["count"]
+    return {"pin_id": pin_id, "is_favorite": False, "favorite_count": count}
+
+
 @app.get(f"{API_PREFIX}/pins/{{pin_id}}/comments")
 def list_comments(pin_id: str) -> list[dict]:
     with closing(connect_db()) as connection:
@@ -503,13 +584,32 @@ def create_comment(
     comment_id = str(uuid.uuid4())
     timestamp = now_iso()
     with closing(connect_db()) as connection:
-        get_active_pin(connection, pin_id)
+        pin = get_active_pin(connection, pin_id)
         connection.execute(
             """
             insert into comments (id, pin_id, body, author_id, created_at, updated_at)
             values (?, ?, ?, ?, ?, ?)
             """,
             (comment_id, pin_id, payload.body, user["id"], timestamp, timestamp),
+        )
+        recipient_ids = {
+            row["user_id"]
+            for row in connection.execute(
+                "select user_id from favorites where pin_id = ?", (pin_id,)
+            ).fetchall()
+        }
+        recipient_ids.add(pin["author_id"])
+        recipient_ids.discard(user["id"])
+        connection.executemany(
+            """
+            insert into notifications
+              (id, user_id, pin_id, comment_id, actor_id, created_at)
+            values (?, ?, ?, ?, ?, ?)
+            """,
+            [
+                (str(uuid.uuid4()), recipient_id, pin_id, comment_id, user["id"], timestamp)
+                for recipient_id in recipient_ids
+            ],
         )
         connection.commit()
         row = connection.execute(COMMENT_SELECT + " where c.id = ?", (comment_id,)).fetchone()
@@ -558,3 +658,67 @@ def delete_comment(
         )
         connection.commit()
     return Response(status_code=204)
+
+
+@app.get(f"{API_PREFIX}/notifications")
+def list_notifications(
+    user: Annotated[dict, Depends(require_user)],
+) -> dict:
+    with closing(connect_db()) as connection:
+        rows = connection.execute(
+            NOTIFICATION_SELECT
+            + """
+              where n.user_id = ? and p.deleted_at is null and c.deleted_at is null
+              order by n.created_at desc limit 100
+            """,
+            (user["id"],),
+        ).fetchall()
+        unread_count = connection.execute(
+            """
+            select count(*) as count
+            from notifications n
+            join pins p on p.id = n.pin_id
+            join comments c on c.id = n.comment_id
+            where n.user_id = ? and n.read_at is null
+              and p.deleted_at is null and c.deleted_at is null
+            """,
+            (user["id"],),
+        ).fetchone()["count"]
+    return {
+        "notifications": [serialize_notification(row) for row in rows],
+        "unread_count": unread_count,
+    }
+
+
+@app.patch(f"{API_PREFIX}/notifications/{{notification_id}}/read")
+def read_notification(
+    notification_id: str,
+    user: Annotated[dict, Depends(require_mutating_user)],
+) -> dict:
+    with closing(connect_db()) as connection:
+        cursor = connection.execute(
+            """
+            update notifications set read_at = coalesce(read_at, ?)
+            where id = ? and user_id = ?
+            """,
+            (now_iso(), notification_id, user["id"]),
+        )
+        if cursor.rowcount == 0:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND, detail="Notification not found"
+            )
+        connection.commit()
+    return {"id": notification_id, "read": True}
+
+
+@app.post(f"{API_PREFIX}/notifications/read-all")
+def read_all_notifications(
+    user: Annotated[dict, Depends(require_mutating_user)],
+) -> dict:
+    with closing(connect_db()) as connection:
+        cursor = connection.execute(
+            "update notifications set read_at = ? where user_id = ? and read_at is null",
+            (now_iso(), user["id"]),
+        )
+        connection.commit()
+    return {"updated_count": cursor.rowcount}

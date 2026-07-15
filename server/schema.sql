@@ -34,8 +34,28 @@ create table if not exists comments (
   deleted_at text
 );
 
+create table if not exists favorites (
+  user_id text not null references users(discord_id) on delete cascade,
+  pin_id text not null references pins(id) on delete cascade,
+  created_at text not null,
+  primary key (user_id, pin_id)
+);
+
+create table if not exists notifications (
+  id text primary key,
+  user_id text not null references users(discord_id) on delete cascade,
+  pin_id text not null references pins(id) on delete cascade,
+  comment_id text not null references comments(id) on delete cascade,
+  actor_id text not null references users(discord_id) on delete cascade,
+  created_at text not null,
+  read_at text
+);
+
 create index if not exists pins_visible_idx
   on pins (deleted_at, status, kind, updated_at desc);
 create index if not exists comments_pin_idx
   on comments (pin_id, deleted_at, created_at);
-
+create index if not exists favorites_pin_idx
+  on favorites (pin_id, created_at);
+create index if not exists notifications_user_idx
+  on notifications (user_id, read_at, created_at desc);

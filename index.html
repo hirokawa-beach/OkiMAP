@@ -118,7 +118,18 @@
           <strong>共有ピン</strong>
           <div id="collabConnection" class="collab-muted">接続を確認中...</div>
         </div>
-        <button id="collabCloseBtn" class="icon-btn" type="button" aria-label="閉じる">×</button>
+        <div class="collab-header-actions">
+          <button
+            id="notificationBtn"
+            class="notification-btn hidden"
+            type="button"
+            aria-label="通知を開く"
+            title="通知"
+          >
+            🔔<span id="notificationBadge" class="notification-badge hidden">0</span>
+          </button>
+          <button id="collabCloseBtn" class="icon-btn" type="button" aria-label="閉じる">×</button>
+        </div>
       </div>
 
       <div id="collabAuth" class="collab-auth">
@@ -152,6 +163,10 @@
             </select>
           </label>
         </div>
+        <label id="favoriteFilterLabel" class="favorite-filter hidden">
+          <input id="favoriteFilter" type="checkbox" />
+          ★ お気に入りのみ
+        </label>
         <button id="startPinBtn" class="collab-primary" type="button" disabled>
           地図をクリックしてピンを追加
         </button>
@@ -161,6 +176,18 @@
         </div>
         <div id="pinList" class="pin-list" aria-live="polite"></div>
       </div>
+
+      <section id="notificationView" class="collab-view hidden" aria-live="polite">
+        <div class="collab-view-title">
+          <strong>通知</strong>
+          <button class="link-btn" data-collab-back type="button">一覧へ戻る</button>
+        </div>
+        <div class="notification-toolbar">
+          <span id="notificationSummary" class="collab-muted">通知を読み込み中...</span>
+          <button id="readAllNotificationsBtn" class="link-btn" type="button">すべて既読</button>
+        </div>
+        <div id="notificationList" class="notification-list"></div>
+      </section>
 
       <form id="pinEditor" class="collab-view hidden">
         <div class="collab-view-title">

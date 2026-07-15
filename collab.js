@@ -25,9 +25,17 @@
     userLabel: $("collabUserLabel"),
     login: $("collabLoginBtn"),
     logout: $("collabLogoutBtn"),
+    notificationButton: $("notificationBtn"),
+    notificationBadge: $("notificationBadge"),
+    notificationView: $("notificationView"),
+    notificationSummary: $("notificationSummary"),
+    notificationList: $("notificationList"),
+    readAllNotifications: $("readAllNotificationsBtn"),
     browse: $("collabBrowseView"),
     kindFilter: $("pinKindFilter"),
     statusFilter: $("pinStatusFilter"),
+    favoriteFilterLabel: $("favoriteFilterLabel"),
+    favoriteFilter: $("favoriteFilter"),
     startPin: $("startPinBtn"),
     modeHint: $("pinModeHint"),
     cancelPinMode: $("cancelPinModeBtn"),
@@ -73,6 +81,9 @@
     editingPin: null,
     selectedPin: null,
     editingComment: null,
+    notifications: [],
+    unreadCount: 0,
+    notificationTimer: null,
     display: {
       pinsVisible: true,
       pinTitles: true,
@@ -202,6 +213,7 @@
     dom.editor.classList.toggle("hidden", name !== "editor");
     dom.detail.classList.toggle("hidden", name !== "detail");
     dom.commentEditor.classList.toggle("hidden", name !== "comment-editor");
+    dom.notificationView.classList.toggle("hidden", name !== "notifications");
   }
 
   function setBusy(button, busy, label) {
@@ -223,6 +235,9 @@
     dom.startPin.title = signedIn ? "" : "投稿にはDiscordログインが必要です";
     dom.commentForm.classList.toggle("hidden", !signedIn || !state.selectedPin);
     dom.commentLoginHint.classList.toggle("hidden", signedIn);
+    dom.notificationButton.classList.toggle("hidden", !signedIn);
+    dom.favoriteFilterLabel.classList.toggle("hidden", !signedIn);
+    if (!signedIn) dom.favoriteFilter.checked = false;
     if (signedIn) {
       const suffix = state.profile?.is_admin ? "（管理者）" : "";
       dom.userLabel.textContent = `${state.profile?.display_name || "Discordユーザー"}${suffix}`;
@@ -249,6 +264,7 @@
     const kind = dom.kindFilter.value;
     const status = dom.statusFilter.value;
     return state.pins.filter((pin) => {
+      if (dom.favoriteFilter.checked && !pin.is_favorite) return false;
       if (kind !== "all" && pin.kind !== kind) return false;
       if (status === "active" && pin.status === "done") return false;
       return status === "all" || status === "active" || pin.status === status;
@@ -259,6 +275,44 @@
     const badge = el("span", `pin-badge kind-${pin.kind}`);
     badge.textContent = `${KINDS[pin.kind]?.icon || "📌"} ${KINDS[pin.kind]?.label || pin.kind}`;
     return badge;
+  }
+
+  function updateFavoriteButton(button, pin) {
+    const active = !!pin.is_favorite;
+    const count = Number(pin.favorite_count || 0);
+    button.classList.toggle("is-favorite", active);
+    button.setAttribute("aria-pressed", String(active));
+    button.title = active ? "お気に入りから外す" : "お気に入りに追加";
+    button.textContent = button.classList.contains("favorite-list-btn")
+      ? active ? "★" : "☆"
+      : `${active ? "★" : "☆"} ${active ? "お気に入り済み" : "お気に入り"}${count ? ` (${count})` : ""}`;
+  }
+
+  function makeFavoriteButton(pin, className) {
+    const button = el("button", className);
+    button.type = "button";
+    updateFavoriteButton(button, pin);
+    button.addEventListener("click", async (event) => {
+      event.stopPropagation();
+      if (!state.user || button.disabled) return;
+      button.disabled = true;
+      try {
+        const result = await apiRequest(`/pins/${encodeURIComponent(pin.id)}/favorite`, {
+          method: pin.is_favorite ? "DELETE" : "POST",
+        });
+        Object.assign(pin, result);
+        const storedPin = state.pins.find((item) => item.id === pin.id);
+        if (storedPin && storedPin !== pin) Object.assign(storedPin, result);
+        updateFavoriteButton(button, pin);
+        renderList();
+      } catch (error) {
+        console.error("Failed to update favorite", error);
+        alert("お気に入りを更新できませんでした。");
+      } finally {
+        button.disabled = false;
+      }
+    });
+    return button;
   }
 
   function renderList() {
@@ -275,25 +329,109 @@
       return;
     }
     for (const pin of pins) {
+      const row = el("div", "pin-list-row");
       const button = el("button", "pin-list-item");
       button.type = "button";
       const top = el("span", "pin-list-top");
       top.append(makeBadge(pin), el("span", `status-chip status-${pin.status}`, STATUSES[pin.status]));
       button.append(top, el("strong", "pin-list-title", pin.title));
-      button.append(el("span", "pin-list-meta", `${profileLabel(profileFor(pin.author_id))}・${formatDate(pin.updated_at)}`));
+      const counts = [];
+      if (pin.comment_count) counts.push(`💬 ${pin.comment_count}`);
+      if (pin.favorite_count) counts.push(`★ ${pin.favorite_count}`);
+      button.append(el("span", "pin-list-meta", `${profileLabel(profileFor(pin.author_id))}・${formatDate(pin.updated_at)}${counts.length ? `・${counts.join(" ")}` : ""}`));
       button.addEventListener("click", () => openDetail(pin));
-      dom.list.append(button);
+      row.append(button);
+      if (state.user) row.append(makeFavoriteButton(pin, "favorite-list-btn"));
+      dom.list.append(row);
     }
     renderMarkers(pins);
+  }
+
+  function groupNearbyPins(pins, radius = 46) {
+    const projected = [];
+    for (const pin of pins) {
+      const latlng = window.OkiMap.imagePointToLatLng(pin.x, pin.y);
+      if (!latlng) continue;
+      projected.push({ pin, latlng, point: state.map.latLngToContainerPoint(latlng) });
+    }
+    const parent = projected.map((_, index) => index);
+    const find = (index) => {
+      while (parent[index] !== index) {
+        parent[index] = parent[parent[index]];
+        index = parent[index];
+      }
+      return index;
+    };
+    const unite = (left, right) => {
+      const leftRoot = find(left);
+      const rightRoot = find(right);
+      if (leftRoot !== rightRoot) parent[rightRoot] = leftRoot;
+    };
+    const cells = new Map();
+    projected.forEach((item, index) => {
+      const cellX = Math.floor(item.point.x / radius);
+      const cellY = Math.floor(item.point.y / radius);
+      for (let x = cellX - 1; x <= cellX + 1; x += 1) {
+        for (let y = cellY - 1; y <= cellY + 1; y += 1) {
+          for (const otherIndex of cells.get(`${x}:${y}`) || []) {
+            if (item.point.distanceTo(projected[otherIndex].point) <= radius) {
+              unite(index, otherIndex);
+            }
+          }
+        }
+      }
+      const key = `${cellX}:${cellY}`;
+      if (!cells.has(key)) cells.set(key, []);
+      cells.get(key).push(index);
+    });
+    const groups = new Map();
+    projected.forEach((item, index) => {
+      const root = find(index);
+      if (!groups.has(root)) groups.set(root, []);
+      groups.get(root).push(item);
+    });
+    return [...groups.values()];
   }
 
   function renderMarkers(pins) {
     if (!state.layer || !state.map) return;
     state.layer.clearLayers();
     if (!state.display.pinsVisible) return;
-    for (const pin of pins) {
-      const latlng = window.OkiMap.imagePointToLatLng(pin.x, pin.y);
-      if (!latlng) continue;
+    for (const group of groupNearbyPins(pins)) {
+      if (group.length > 1) {
+        const center = L.latLng(
+          group.reduce((sum, item) => sum + item.latlng.lat, 0) / group.length,
+          group.reduce((sum, item) => sum + item.latlng.lng, 0) / group.length,
+        );
+        const count = group.length;
+        const icon = L.divIcon({
+          className: "collab-cluster-wrap",
+          html: `<span class="collab-cluster" aria-hidden="true">${count}</span>`,
+          iconSize: [42, 42],
+          iconAnchor: [21, 21],
+        });
+        const marker = L.marker(center, {
+          icon,
+          pane: "collabPins",
+          keyboard: true,
+          title: `${count}件の共有ピン`,
+        });
+        const titleList = group
+          .slice(0, 8)
+          .map(({ pin }) => `<li>${escapeHtml(pin.title)}</li>`)
+          .join("");
+        const remainder = count > 8 ? `<li>ほか${count - 8}件</li>` : "";
+        marker.bindPopup(`<strong>${count}件の共有ピン</strong><ul class="collab-cluster-list">${titleList}${remainder}</ul>`);
+        marker.on("click", () => {
+          const maxZoom = state.map.getMaxZoom();
+          if (state.map.getZoom() < maxZoom) {
+            state.map.setView(center, Math.min(maxZoom, state.map.getZoom() + 2));
+          }
+        });
+        marker.addTo(state.layer);
+        continue;
+      }
+      const { pin, latlng } = group[0];
       const title = state.display.pinTitles
         ? `<span class="collab-marker-title">${escapeHtml(pin.title)}</span>`
         : "";
@@ -310,7 +448,7 @@
         title: pin.title,
       });
       if (state.display.pinHoverContent) {
-        const tooltip = el("span", "collab-tooltip", summarize(pin.body, 180));
+        const tooltip = el("span", "collab-tooltip", summarize(pin.body, 260));
         marker.bindTooltip(tooltip, {
           direction: "top",
           offset: [0, -32],
@@ -346,6 +484,104 @@
     }
   }
 
+  function updateNotificationBadge() {
+    const count = Number(state.unreadCount || 0);
+    dom.notificationBadge.textContent = count > 99 ? "99+" : String(count);
+    dom.notificationBadge.classList.toggle("hidden", count === 0);
+    dom.notificationButton.setAttribute("aria-label", count ? `通知を開く（未読${count}件）` : "通知を開く");
+  }
+
+  function renderNotifications() {
+    dom.notificationList.replaceChildren();
+    const notifications = state.notifications || [];
+    dom.notificationSummary.textContent = state.unreadCount
+      ? `未読 ${state.unreadCount}件`
+      : "未読の通知はありません";
+    dom.readAllNotifications.disabled = state.unreadCount === 0;
+    if (!notifications.length) {
+      dom.notificationList.append(el("p", "collab-empty", "通知はまだありません。"));
+      return;
+    }
+    for (const notification of notifications) {
+      const button = el("button", `notification-item${notification.read_at ? "" : " is-unread"}`);
+      button.type = "button";
+      const actorName = notification.actor?.display_name || "ユーザー";
+      button.append(
+        el("strong", "notification-title", notification.pin_title),
+        el("span", "notification-message", `${actorName}さんがコメントしました`),
+        el("span", "notification-preview", summarize(notification.comment_body, 100)),
+        el("time", "notification-time", formatDate(notification.created_at)),
+      );
+      button.addEventListener("click", () => openNotification(notification));
+      dom.notificationList.append(button);
+    }
+  }
+
+  async function loadNotifications({ quiet = false } = {}) {
+    if (!state.user) return;
+    if (!quiet) dom.notificationSummary.textContent = "通知を読み込み中...";
+    try {
+      const data = await apiRequest("/notifications");
+      state.notifications = data.notifications || [];
+      state.unreadCount = Number(data.unread_count || 0);
+      for (const notification of state.notifications) {
+        if (notification.actor?.id) state.profiles.set(notification.actor.id, notification.actor);
+      }
+      updateNotificationBadge();
+      renderNotifications();
+    } catch (error) {
+      console.error("Failed to load notifications", error);
+      if (!quiet) dom.notificationSummary.textContent = "通知を読み込めませんでした";
+    }
+  }
+
+  async function openNotification(notification) {
+    if (!notification.read_at) {
+      try {
+        await apiRequest(`/notifications/${encodeURIComponent(notification.id)}/read`, { method: "PATCH" });
+        notification.read_at = new Date().toISOString();
+        state.unreadCount = Math.max(0, state.unreadCount - 1);
+        updateNotificationBadge();
+        renderNotifications();
+      } catch (error) {
+        console.error("Failed to mark notification as read", error);
+      }
+    }
+    let pin = state.pins.find((item) => item.id === notification.pin_id);
+    if (!pin) {
+      await refreshPins();
+      pin = state.pins.find((item) => item.id === notification.pin_id);
+    }
+    if (pin) await openDetail(pin);
+  }
+
+  async function readAllNotifications() {
+    if (!state.user || !state.unreadCount) return;
+    setBusy(dom.readAllNotifications, true, "既読中...");
+    try {
+      await apiRequest("/notifications/read-all", { method: "POST" });
+      const readAt = new Date().toISOString();
+      for (const notification of state.notifications) {
+        if (!notification.read_at) notification.read_at = readAt;
+      }
+      state.unreadCount = 0;
+      updateNotificationBadge();
+      renderNotifications();
+    } catch (error) {
+      console.error("Failed to mark all notifications as read", error);
+      alert("通知を既読にできませんでした。");
+    } finally {
+      setBusy(dom.readAllNotifications, false);
+    }
+  }
+
+  function startNotificationPolling() {
+    if (state.notificationTimer) clearInterval(state.notificationTimer);
+    state.notificationTimer = state.user
+      ? setInterval(() => loadNotifications({ quiet: true }), 60000)
+      : null;
+  }
+
   function attachMap() {
     if (state.map || !window.OkiMap?.map) return;
     state.map = window.OkiMap.map;
@@ -360,6 +596,7 @@
     };
     updateVisibilityButton();
     state.map.on("click", onMapClick);
+    state.map.on("zoomend", () => renderMarkers(filteredPins()));
     renderList();
   }
 
@@ -470,6 +707,9 @@
       dom.detailContent.append(link);
     }
     dom.detailActions.replaceChildren();
+    if (state.user) {
+      dom.detailActions.append(makeFavoriteButton(pin, "secondary favorite-detail-btn"));
+    }
     if (canManage(pin.author_id)) {
       const edit = el("button", "secondary", "編集");
       edit.type = "button";
@@ -525,9 +765,11 @@
     dom.commentScrollTop.classList.remove("hidden");
     for (const comment of comments) {
       const article = el("article", "comment-item");
+      const isOwnComment = !!state.user && state.user.id === comment.author_id;
+      article.classList.toggle("is-own-comment", isOwnComment);
       const header = el("div", "comment-header");
       header.append(
-        el("strong", null, profileLabel(profileFor(comment.author_id))),
+        el("strong", isOwnComment ? "own-comment-label" : null, isOwnComment ? "自分" : profileLabel(profileFor(comment.author_id))),
         el("time", null, formatDate(comment.created_at)),
       );
       article.append(header);
@@ -655,6 +897,10 @@
       state.user = null;
       state.profile = null;
       state.selectedPin = null;
+      state.notifications = [];
+      state.unreadCount = 0;
+      startNotificationPolling();
+      updateNotificationBadge();
       showView("browse");
       updateAuthUi();
       renderList();
@@ -671,6 +917,12 @@
     dom.logout.addEventListener("click", logout);
     dom.kindFilter.addEventListener("change", renderList);
     dom.statusFilter.addEventListener("change", renderList);
+    dom.favoriteFilter.addEventListener("change", renderList);
+    dom.notificationButton.addEventListener("click", async () => {
+      showView("notifications");
+      await loadNotifications();
+    });
+    dom.readAllNotifications.addEventListener("click", readAllNotifications);
     dom.startPin.addEventListener("click", startAddMode);
     dom.cancelPinMode.addEventListener("click", cancelAddMode);
     dom.editor.addEventListener("submit", savePin);
@@ -732,6 +984,10 @@
       updateAuthUi();
     }
     await refreshPins();
+    if (state.user) {
+      await loadNotifications({ quiet: true });
+      startNotificationPolling();
+    }
   }
 
   init().catch((error) => {

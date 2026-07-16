@@ -219,7 +219,7 @@ function toDisplayTileCoords(px, py) {
 
 // 表示用のタイル座標をwplaceのズーム9ワールド座標へ戻し、
 // Web Mercatorの逆変換で緯度経度を求める。
-function imagePointToWplaceUrl(x, y, zoom = 18) {
+function imagePointToWplaceUrl(x, y, zoom = 12) {
   if (!Number.isFinite(x) || !Number.isFinite(y)) return null;
   const pixel = toDisplayTileCoords(Math.floor(x), Math.floor(y));
   const worldX = pixel.tileX * DISPLAY_TILE_SIZE + pixel.inX;
@@ -757,7 +757,7 @@ window.OkiMap = Object.freeze({
     if (!Number.isFinite(x) || !Number.isFinite(y)) return null;
     return toDisplayTileCoords(Math.floor(x), Math.floor(y));
   },
-  imagePointToWplaceUrl(x, y, zoom = 18) {
+  imagePointToWplaceUrl(x, y, zoom = 12) {
     return imagePointToWplaceUrl(x, y, zoom);
   },
   getCollabDisplaySettings() {

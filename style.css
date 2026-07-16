@@ -740,7 +740,11 @@ button:active {
   overflow-wrap: anywhere;
 }
 .pin-detail-body, .comment-body { margin: 8px 0; line-height: 1.55; white-space: pre-wrap; overflow-wrap: anywhere; }
-.pin-related-link { display: inline-block; margin-top: 5px; color: #174dcc; font-size: 13px; }
+.pin-detail-links { display: flex; flex-wrap: wrap; gap: 7px; margin-top: 8px; }
+.pin-related-link, .pin-wplace-link { display: inline-block; padding: 6px 9px; border-radius: 7px; color: #174dcc; background: rgba(29, 92, 255, 0.08); font-size: 13px; font-weight: 700; text-decoration: none; }
+.pin-related-link:hover, .pin-wplace-link:hover { background: rgba(29, 92, 255, 0.15); text-decoration: underline; }
+.pin-wplace-link { color: #17653a; background: rgba(23, 145, 75, 0.11); }
+.pin-wplace-link:hover { background: rgba(23, 145, 75, 0.19); }
 .comments-section { margin-top: 18px; padding-top: 14px; border-top: 1px solid rgba(12, 18, 32, 0.08); }
 .comments-heading { display: flex; align-items: center; justify-content: space-between; margin-bottom: 10px; }
 .comments-section h3 { margin: 0; font: 700 15px "Space Grotesk", "Manrope", "Segoe UI", Arial, sans-serif; }
@@ -790,7 +794,12 @@ button:active {
 }
 .collab-cluster-wrap { background: transparent; border: 0; }
 .collab-cluster { display: grid; place-items: center; width: 42px; height: 42px; border: 3px solid #fff; border-radius: 50%; background: #1d5cff; box-shadow: 0 3px 12px rgba(12, 18, 32, 0.4); color: #fff; font: 800 14px "Space Grotesk", "Manrope", "Segoe UI", Arial, sans-serif; }
-.collab-cluster-list { margin: 7px 0 0; padding-left: 18px; }
+.collab-cluster-popup > strong { display: block; margin-bottom: 8px; font: 700 14px "Space Grotesk", "Manrope", "Segoe UI", Arial, sans-serif; }
+.collab-cluster-options { display: grid; gap: 6px; max-height: min(45vh, 360px); overflow-y: auto; padding-right: 3px; }
+.collab-cluster-option { display: grid; gap: 3px; width: 100%; padding: 8px 9px; border: 1px solid rgba(12, 18, 32, 0.1); border-radius: 8px; background: #fff; color: #0c1220; text-align: left; cursor: pointer; }
+.collab-cluster-option:hover { border-color: rgba(29, 92, 255, 0.4); background: #f3f7ff; }
+.collab-cluster-option-title { font-size: 13px; font-weight: 700; overflow-wrap: anywhere; }
+.collab-cluster-option-meta { color: #4a5568; font-size: 11px; }
 .notification-toolbar { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
 .notification-list { display: grid; gap: 8px; margin-top: 10px; }
 .notification-item { display: grid; gap: 3px; width: 100%; padding: 10px; border: 1px solid rgba(12, 18, 32, 0.09); border-radius: 10px; background: rgba(255, 255, 255, 0.72); color: #0c1220; text-align: left; cursor: pointer; }

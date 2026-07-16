@@ -743,7 +743,22 @@ button:active { transform: translateY(1px); }
 .pin-detail-title { margin: 12px 0 6px; font: 700 21px $font-head; overflow-wrap: anywhere; }
 .pin-detail-body,
 .comment-body { margin: 8px 0; line-height: 1.55; white-space: pre-wrap; overflow-wrap: anywhere; }
-.pin-related-link { display: inline-block; margin-top: 5px; color: #174dcc; font-size: 13px; }
+.pin-detail-links { display: flex; flex-wrap: wrap; gap: 7px; margin-top: 8px; }
+.pin-related-link,
+.pin-wplace-link {
+  display: inline-block;
+  padding: 6px 9px;
+  border-radius: 7px;
+  color: #174dcc;
+  background: rgba(29,92,255,0.08);
+  font-size: 13px;
+  font-weight: 700;
+  text-decoration: none;
+}
+.pin-related-link:hover,
+.pin-wplace-link:hover { background: rgba(29,92,255,0.15); text-decoration: underline; }
+.pin-wplace-link { color: #17653a; background: rgba(23,145,75,0.11); }
+.pin-wplace-link:hover { background: rgba(23,145,75,0.19); }
 .comments-section { margin-top: 18px; padding-top: 14px; border-top: 1px solid $line; }
 .comments-heading { display: flex; align-items: center; justify-content: space-between; margin-bottom: 10px; }
 .comments-section h3 { margin: 0; font: 700 15px $font-head; }
@@ -831,7 +846,29 @@ button:active { transform: translateY(1px); }
   color: #fff;
   font: 800 14px $font-head;
 }
-.collab-cluster-list { margin: 7px 0 0; padding-left: 18px; }
+.collab-cluster-popup > strong { display: block; margin-bottom: 8px; font: 700 14px $font-head; }
+.collab-cluster-options {
+  display: grid;
+  gap: 6px;
+  max-height: min(45vh, 360px);
+  overflow-y: auto;
+  padding-right: 3px;
+}
+.collab-cluster-option {
+  display: grid;
+  gap: 3px;
+  width: 100%;
+  padding: 8px 9px;
+  border: 1px solid rgba(12,18,32,0.1);
+  border-radius: 8px;
+  background: #fff;
+  color: $ink-1;
+  text-align: left;
+  cursor: pointer;
+}
+.collab-cluster-option:hover { border-color: rgba(29,92,255,0.4); background: #f3f7ff; }
+.collab-cluster-option-title { font-size: 13px; font-weight: 700; overflow-wrap: anywhere; }
+.collab-cluster-option-meta { color: $ink-2; font-size: 11px; }
 .notification-toolbar { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
 .notification-list { display: grid; gap: 8px; margin-top: 10px; }
 .notification-item {

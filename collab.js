@@ -416,17 +416,33 @@
           keyboard: true,
           title: `${count}件の共有ピン`,
         });
-        const titleList = group
-          .slice(0, 8)
-          .map(({ pin }) => `<li>${escapeHtml(pin.title)}</li>`)
-          .join("");
-        const remainder = count > 8 ? `<li>ほか${count - 8}件</li>` : "";
-        marker.bindPopup(`<strong>${count}件の共有ピン</strong><ul class="collab-cluster-list">${titleList}${remainder}</ul>`);
-        marker.on("click", () => {
-          const maxZoom = state.map.getMaxZoom();
-          if (state.map.getZoom() < maxZoom) {
-            state.map.setView(center, Math.min(maxZoom, state.map.getZoom() + 2));
-          }
+        const popup = el("div", "collab-cluster-popup");
+        popup.append(el("strong", null, `${count}件の共有ピン`));
+        const options = el("div", "collab-cluster-options");
+        const sortedGroup = [...group].sort((left, right) =>
+          String(right.pin.updated_at || "").localeCompare(String(left.pin.updated_at || "")),
+        );
+        for (const { pin } of sortedGroup) {
+          const button = el("button", "collab-cluster-option");
+          button.type = "button";
+          button.append(
+            el("span", "collab-cluster-option-title", `${KINDS[pin.kind]?.icon || "📌"} ${pin.title}`),
+            el("span", "collab-cluster-option-meta", `${KINDS[pin.kind]?.label || pin.kind}・${STATUSES[pin.status] || pin.status}`),
+          );
+          button.addEventListener("click", (event) => {
+            event.preventDefault();
+            event.stopPropagation();
+            state.map.closePopup();
+            setPanel(true);
+            openDetail(pin);
+          });
+          options.append(button);
+        }
+        popup.append(options);
+        marker.bindPopup(popup, {
+          className: "collab-cluster-popup-shell",
+          minWidth: 220,
+          maxWidth: 320,
         });
         marker.addTo(state.layer);
         continue;
@@ -698,14 +714,24 @@
     const profile = profileFor(pin.author_id);
     dom.detailContent.append(el("p", "pin-detail-byline", `${profileLabel(profile)}・${formatDate(pin.created_at)}`));
     dom.detailContent.append(el("p", "collab-coordinate", formatPixelCoordinate(pin.x, pin.y)));
+    const links = el("div", "pin-detail-links");
+    const wplaceUrl = safeUrl(window.OkiMap?.imagePointToWplaceUrl?.(pin.x, pin.y));
+    if (wplaceUrl) {
+      const wplaceLink = el("a", "pin-wplace-link", "Wplaceで開く ↗");
+      wplaceLink.href = wplaceUrl;
+      wplaceLink.target = "_blank";
+      wplaceLink.rel = "noopener noreferrer";
+      links.append(wplaceLink);
+    }
     const url = safeUrl(pin.related_url);
     if (url) {
       const link = el("a", "pin-related-link", "関連リンクを開く ↗");
       link.href = url;
       link.target = "_blank";
       link.rel = "noopener noreferrer";
-      dom.detailContent.append(link);
+      links.append(link);
     }
+    if (links.childElementCount) dom.detailContent.append(links);
     dom.detailActions.replaceChildren();
     if (state.user) {
       dom.detailActions.append(makeFavoriteButton(pin, "secondary favorite-detail-btn"));
@@ -827,6 +853,9 @@
     }
     dom.commentBody.value = "";
     await loadComments(state.selectedPin.id);
+    // コメント投稿後は、一覧だけでなく外側の詳細パネルも最新コメントまで移動する。
+    dom.commentList.scrollTop = dom.commentList.scrollHeight;
+    dom.panel.scrollTop = dom.panel.scrollHeight;
   }
 
   function editComment(comment) {

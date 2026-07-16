@@ -48,6 +48,8 @@ const MAX_PRELOAD_TASKS = 4000;
 const DISPLAY_TILE_BASE_X = 1791;
 const DISPLAY_TILE_BASE_Y = 901;
 const DISPLAY_TILE_SIZE = 1000;
+const WPLACE_ZOOM_BASE = 9;
+const WPLACE_WORLD_SCALE = 4000 * Math.pow(2, WPLACE_ZOOM_BASE);
 
 // タイムスタンプデータ構造
 const timestampsByDate = new Map();
@@ -213,6 +215,23 @@ function toDisplayTileCoords(px, py) {
   const inY =
     ((py % DISPLAY_TILE_SIZE) + DISPLAY_TILE_SIZE) % DISPLAY_TILE_SIZE;
   return { tileX, tileY, inX, inY };
+}
+
+// 表示用のタイル座標をwplaceのズーム9ワールド座標へ戻し、
+// Web Mercatorの逆変換で緯度経度を求める。
+function imagePointToWplaceUrl(x, y, zoom = 18) {
+  if (!Number.isFinite(x) || !Number.isFinite(y)) return null;
+  const pixel = toDisplayTileCoords(Math.floor(x), Math.floor(y));
+  const worldX = pixel.tileX * DISPLAY_TILE_SIZE + pixel.inX;
+  const worldY = pixel.tileY * DISPLAY_TILE_SIZE + pixel.inY;
+  const lng = (worldX / WPLACE_WORLD_SCALE) * 360 - 180;
+  const mercatorY = Math.PI - (2 * Math.PI * worldY) / WPLACE_WORLD_SCALE;
+  const lat = (Math.atan(Math.sinh(mercatorY)) * 180) / Math.PI;
+  const url = new URL("https://wplace.live/");
+  url.searchParams.set("lat", String(lat));
+  url.searchParams.set("lng", String(lng));
+  url.searchParams.set("zoom", String(zoom));
+  return url.href;
 }
 
 function getTileRangeForZoom(z) {
@@ -737,6 +756,9 @@ window.OkiMap = Object.freeze({
   imagePointToDisplayPixel(x, y) {
     if (!Number.isFinite(x) || !Number.isFinite(y)) return null;
     return toDisplayTileCoords(Math.floor(x), Math.floor(y));
+  },
+  imagePointToWplaceUrl(x, y, zoom = 18) {
+    return imagePointToWplaceUrl(x, y, zoom);
   },
   getCollabDisplaySettings() {
     return {

@@ -753,7 +753,7 @@ button:active {
   overflow-y: auto; padding-right: 3px;
 }
 .comment-item { padding: 9px 10px; border-radius: 9px; background: rgba(12, 18, 32, 0.045); }
-.comment-item.is-own-comment { border-left: 3px solid #1d5cff; background: rgba(29, 92, 255, 0.09); }
+.comment-item.is-own-comment { background: rgba(29, 92, 255, 0.09); }
 .own-comment-label { color: #174dcc; }
 .comment-header { justify-content: space-between; gap: 8px; font-size: 12px; }
 .comment-header time { color: #4a5568; font-size: 11px; }
